@@ -1737,17 +1737,9 @@ static vpx_codec_err_t ctrl_set_reference(vpx_codec_alg_priv_t *ctx,
   if (frame != NULL) {
     YV12_BUFFER_CONFIG sd;
 
-    if (frame->img.planes[VPX_PLANE_Y] == NULL ||
-        frame->img.planes[VPX_PLANE_U] == NULL ||
-        frame->img.planes[VPX_PLANE_V] == NULL) {
-      return VPX_CODEC_INVALID_PARAM;
-    }
-
     image2yuvconfig(&frame->img, &sd);
-    if (vp9_set_reference_enc(
-            ctx->cpi, ref_frame_to_vp9_reframe(frame->frame_type), &sd)) {
-      return VPX_CODEC_ERROR;
-    }
+    vp9_set_reference_enc(ctx->cpi, ref_frame_to_vp9_reframe(frame->frame_type),
+                          &sd);
     return VPX_CODEC_OK;
   }
   return VPX_CODEC_INVALID_PARAM;
@@ -1760,17 +1752,9 @@ static vpx_codec_err_t ctrl_copy_reference(vpx_codec_alg_priv_t *ctx,
   if (frame != NULL) {
     YV12_BUFFER_CONFIG sd;
 
-    if (frame->img.planes[VPX_PLANE_Y] == NULL ||
-        frame->img.planes[VPX_PLANE_U] == NULL ||
-        frame->img.planes[VPX_PLANE_V] == NULL) {
-      return VPX_CODEC_INVALID_PARAM;
-    }
-
     image2yuvconfig(&frame->img, &sd);
-    if (vp9_copy_reference_enc(
-            ctx->cpi, ref_frame_to_vp9_reframe(frame->frame_type), &sd)) {
-      return VPX_CODEC_ERROR;
-    }
+    vp9_copy_reference_enc(ctx->cpi,
+                           ref_frame_to_vp9_reframe(frame->frame_type), &sd);
     return VPX_CODEC_OK;
   }
   return VPX_CODEC_INVALID_PARAM;

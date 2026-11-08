@@ -37,6 +37,7 @@
 
 
 #include "BinDecoder.h"
+#include "DecoderLib/VideCapture.h"  // VidE: CABAC bin accounting
 #include "CommonLib/Rom.h"
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
 #include "CommonLib/CodingStatistics.h"
@@ -91,6 +92,7 @@ void BinDecoderBase::riceStatReset(int bitDepth, bool persistentRiceAdaptationEn
 
 unsigned BinDecoderBase::decodeBinEP()
 {
+  vide_vvc::addBins(1);  // VidE: count one bypass bin
   m_value += m_value;
   if( ++m_bitsNeeded >= 0 )
   {
@@ -114,6 +116,7 @@ unsigned BinDecoderBase::decodeBinEP()
 
 unsigned BinDecoderBase::decodeBinsEP( unsigned numBins )
 {
+  vide_vvc::addBins(numBins);  // VidE: count bypass bins
 #if ENABLE_TRACING
   int numBinsOrig = numBins;
 #endif
@@ -202,6 +205,7 @@ unsigned BinDecoderBase::decodeRemAbsEP(unsigned goRicePar, unsigned cutoff, int
 
 unsigned BinDecoderBase::decodeBinTrm()
 {
+  vide_vvc::addBins(1);  // VidE: count termination bin
   m_range -= 2;
   unsigned scaledRange = m_range << 7;
   if (m_value >= scaledRange)
@@ -241,6 +245,7 @@ void BinDecoderBase::align()
 
 unsigned BinDecoderBase::decodeAlignedBinsEP( unsigned numBins )
 {
+  vide_vvc::addBins(numBins);  // VidE: count aligned bypass bins
 #if ENABLE_TRACING
   int numBinsOrig = numBins;
 #endif
@@ -291,6 +296,7 @@ TBinDecoder<BinProbModel>::TBinDecoder()
 template <class BinProbModel>
 unsigned TBinDecoder<BinProbModel>::decodeBin( unsigned ctxId )
 {
+  vide_vvc::addBins(1);  // VidE: count one context-coded bin
   BinProbModel &probModel = m_ctx[ctxId];
   unsigned      bin       = probModel.mps();
   uint32_t      lpsRange  = probModel.getLPS(m_range);

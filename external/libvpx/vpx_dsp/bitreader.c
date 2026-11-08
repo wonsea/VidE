@@ -23,13 +23,15 @@ int vpx_reader_init(vpx_reader *r, const uint8_t *buffer, size_t size,
   if (size && !buffer) {
     return 1;
   } else {
-    r->buffer_end = buffer + size;
-    r->buffer = buffer;
-    r->value = 0;
-    r->count = -8;
+  r->buffer_end = buffer + size;
+  r->buffer = buffer;
+  r->buffer_start = buffer;  // VidE
+  r->value = 0;
+  r->count = -8;
     r->range = 255;
     r->decrypt_cb = decrypt_cb;
     r->decrypt_state = decrypt_state;
+    r->bins = 0;  // VidE
     vpx_reader_fill(r);
     return vpx_read_bit(r) != 0;  // marker bit
   }

@@ -37,6 +37,7 @@
 
 #include "NALread.h"
 #include "DecLib.h"
+#include "DecoderLib/VideCapture.h"  // VidE: prediction/residual capture hook
 
 #include "CommonLib/dtrace_next.h"
 #include "CommonLib/dtrace_buffer.h"
@@ -962,6 +963,7 @@ void DecLib::finishPicture(int &poc, PicList *&rpcListPic, MsgLevel msgl, bool a
   m_maxDecSubPicIdx = 0;
   m_maxDecSliceAddrInSubPic = -1;
 
+  vide_vvc::capturePicture( m_pcPic );  // VidE: capture prediction/residual
   m_pcPic->destroyTempBuffers();
   m_pcPic->cs->destroyCoeffs();
   m_pcPic->cs->releaseIntermediateData();

@@ -40,6 +40,7 @@
 #include "TDecSbac.h"
 #include "TDecBinCoder.h"
 #include "TDecBinCoderCABAC.h"
+#include "VideCapture.h"  // VidE: slice-data-start bit capture
 #include "libmd5/MD5.h"
 #include "TLibCommon/SEI.h"
 
@@ -103,6 +104,7 @@ Void TDecGop::init( TDecEntropy*            pcEntropyDecoder,
 Void TDecGop::decompressSlice(TComInputBitstream* pcBitstream, TComPic* pcPic)
 {
   TComSlice*  pcSlice = pcPic->getSlice(pcPic->getCurrSliceIdx());
+  vide_hm::recordSliceDataStart( pcPic, pcBitstream->getNumBitsRead() );  // VidE: slice-data start bit
   // Table of extracted substreams.
   // These must be deallocated AND their internal fifos, too.
   TComInputBitstream **ppcSubstreams = NULL;
@@ -116,9 +118,13 @@ Void TDecGop::decompressSlice(TComInputBitstream* pcBitstream, TComPic* pcPic)
 
   // init each couple {EntropyDecoder, Substream}
   ppcSubstreams    = new TComInputBitstream*[uiNumSubstreams];
+  unsigned substreamBase = pcBitstream->getNumBitsRead();  // VidE: cumulative base in NAL RBSP
   for ( UInt ui = 0 ; ui < uiNumSubstreams ; ui++ )
   {
-    ppcSubstreams[ui] = pcBitstream->extractSubstream(ui+1 < uiNumSubstreams ? (pcSlice->getSubstreamSize(ui)<<3) : pcBitstream->getNumBitsLeft());
+    const unsigned substreamBits = (ui+1 < uiNumSubstreams) ? (pcSlice->getSubstreamSize(ui)<<3) : pcBitstream->getNumBitsLeft();
+    ppcSubstreams[ui] = pcBitstream->extractSubstream(substreamBits);
+    vide_hm::recordSubstreamBase( ppcSubstreams[ui], substreamBase );  // VidE
+    substreamBase += substreamBits;
   }
 
   m_pcSliceDecoder->decompressSlice( ppcSubstreams, pcPic, m_pcSbacDecoder);

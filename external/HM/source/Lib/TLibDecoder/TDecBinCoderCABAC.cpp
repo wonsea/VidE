@@ -37,6 +37,7 @@
 
 #include "TDecBinCoderCABAC.h"
 #include "TLibCommon/Debug.h"
+#include "TLibDecoder/VideCapture.h"  // VidE: CABAC bin accounting
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
 #include "TLibCommon/TComCodingStatistics.h"
 #endif
@@ -57,6 +58,7 @@ Void
 TDecBinCABAC::init( TComInputBitstream* pcTComBitstream )
 {
   m_pcTComBitstream = pcTComBitstream;
+  vide_hm::setActiveSubstream( pcTComBitstream );  // VidE: track active substream base
 }
 
 Void
@@ -76,6 +78,13 @@ TDecBinCABAC::start()
   m_bitsNeeded = -8;
   m_uiValue    = (m_pcTComBitstream->readByte() << 8);
   m_uiValue   |= m_pcTComBitstream->readByte();
+}
+
+// VidE: consumed bits in the CABAC substream (bitstream bytes read + held bits).
+Int
+TDecBinCABAC::getNumBitsRead() const
+{
+  return static_cast<Int>(m_pcTComBitstream->getNumBitsRead()) + m_bitsNeeded;
 }
 
 Void
@@ -110,6 +119,7 @@ Void TDecBinCABAC::decodeBin( UInt& ruiBin, ContextModel &rcCtxModel, const TCom
 Void TDecBinCABAC::decodeBin( UInt& ruiBin, ContextModel &rcCtxModel )
 #endif
 {
+  vide_hm::addBins(1);  // VidE: count one bin
 #if DEBUG_CABAC_BINS
   const UInt startingRange = m_uiRange;
 #endif
@@ -196,6 +206,7 @@ Void TDecBinCABAC::decodeBinEP( UInt& ruiBin )
     return;
   }
 
+  vide_hm::addBins(1);  // VidE: count one bypass bin
   m_uiValue += m_uiValue;
 
   if ( ++m_bitsNeeded >= 0 )
@@ -232,6 +243,7 @@ Void TDecBinCABAC::decodeBinsEP( UInt& ruiBin, Int numBins )
     return;
   }
 
+  vide_hm::addBins(static_cast<unsigned>(numBins));  // VidE: count bypass bins
   UInt bins = 0;
 #if RExt__DECODER_DEBUG_BIT_STATISTICS
   Int origNumBins=numBins;
@@ -295,6 +307,7 @@ Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins, const class 
 Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins )
 #endif
 {
+  vide_hm::addBins(static_cast<unsigned>(numBins));  // VidE: count aligned bypass bins
   Int binsRemaining = numBins;
   ruiBins = 0;
 
@@ -337,6 +350,7 @@ Void TDecBinCABAC::decodeAlignedBinsEP( UInt& ruiBins, Int numBins )
 Void
 TDecBinCABAC::decodeBinTrm( UInt& ruiBin )
 {
+  vide_hm::addBins(1);  // VidE: count termination bin
   m_uiRange -= 2;
   UInt scaledRange = m_uiRange << 7;
   if( m_uiValue >= scaledRange )

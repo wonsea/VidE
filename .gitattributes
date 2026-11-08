@@ -1,0 +1,28 @@
+# Normalize line endings: store LF in the repository, check out LF for source.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF so they run in cmd/PowerShell as expected.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Binary files (no line-ending conversion, no diff).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.a binary
+*.lib binary
+*.exe binary
+*.dll binary
+*.o binary
+*.obj binary
+
+# Reference-software sources are third-party; keep them out of blame noise.
+external/HM/** -diff
+external/VTM/** -diff
+external/JM/** -diff
+external/libvpx/** -diff
+external/libaom/** -diff
+external/imgui/** -diff

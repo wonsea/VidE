@@ -19,13 +19,13 @@
 
 #ifndef _DEFINES_H_
 #define _DEFINES_H_
-#ifdef TRACE
-#undef TRACE
-#endif
+
+#ifndef TRACE
 #if defined _DEBUG
 # define TRACE           0     //!< 0:Trace off 1:Trace on 2:detailed CABAC context information
 #else
 # define TRACE           0     //!< 0:Trace off 1:Trace on 2:detailed CABAC context information
+#endif
 #endif
 
 #define JM                  "19 (FRExt)"
@@ -45,7 +45,9 @@
 #define JM_PARALLEL_DEBLOCK       0    //!< Enables Parallel Deblocking
 #define SIMULCAST_ENABLE          0    //!< to test the decoder
 
-#define MVC_EXTENSION_ENABLE      1    //!< enable support for the Multiview High Profile
+// VidE patch: disable MVC so the decoder uses the simple single-view output
+// path (p_out), which vide_avc_helper relies on.
+#define MVC_EXTENSION_ENABLE      0    //!< enable support for the Multiview High Profile
 #define ENABLE_DEC_STATS          0    //!< enable decoder statistics collection
 
 #define MVC_INIT_VIEW_ID          -1

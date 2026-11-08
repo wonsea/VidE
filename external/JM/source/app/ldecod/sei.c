@@ -56,6 +56,7 @@
 // #define PRINT_POST_FILTER_HINT_INFO                // uncomment to print post-filter hint SEI info
 // #define PRINT_FRAME_PACKING_ARRANGEMENT_INFO       // uncomment to print frame packing arrangement SEI info
 // #define PRINT_GREEN_METADATA_INFO      // uncomment to print Green Metadata SEI info
+// #define PRINT_MODALITY_INFO                        // uncomment to print modality SEI info
 
 /*!
  ************************************************************************
@@ -177,6 +178,11 @@ void InterpretSEIMessage(byte* msg, int size, VideoParameters *p_Vid, Slice *pSl
     case  SEI_GREEN_METADATA:
       interpret_green_metadata_info( msg+offset, payload_size, p_Vid );
       break;
+#if JVET_AK0107_MODALITY_INFORMATION
+    case  SEI_MODALITY_INFO:
+      interpret_modality_info( msg+offset, payload_size, p_Vid );
+      break;
+#endif
     default:
       interpret_reserved_info( msg+offset, payload_size, p_Vid );
       break;    
@@ -2317,3 +2323,66 @@ void interpret_green_metadata_info(byte* payload, int size, VideoParameters *p_V
 
   free (buf);
 }
+
+#if JVET_AK0107_MODALITY_INFORMATION
+ void interpret_modality_info( byte* payload, int size, VideoParameters *p_Vid )
+ {
+   
+   Bitstream* buf;
+   modality_information_struct seiModalityInfo; 
+
+   buf = malloc(sizeof(Bitstream));
+   buf->bitstream_length = size;
+   buf->streamBuffer = payload;
+   buf->frame_bitoffset = 0;
+ 
+   p_Dec->UsedBits = 0;
+ 
+ #ifdef PRINT_MODALITY_INFO   
+   printf("Modality Info SEI message\n");
+ #endif
+ 
+ seiModalityInfo.modality_info_cancel_flag  = read_u_1("SEI: modality_info_cancel_flag", buf, &p_Dec->UsedBits);
+#ifdef PRINT_MODALITY_INFO
+ printf("modality_info_cancel_flag         = %d\n", seiModalityInfo.modality_info_cancel_flag);
+#endif
+ if ( !seiModalityInfo.modality_info_cancel_flag ) 
+ {
+    seiModalityInfo.modality_info_persistence_flag  = read_u_1("SEI: modality_info_persistence_flag", buf, &p_Dec->UsedBits);
+    seiModalityInfo.modality_type                   = read_u_v(5, "SEI:  modality_type", buf, &p_Dec->UsedBits);
+    seiModalityInfo.spectrum_range_present_flag     = read_u_1("SEI: spectrum_range_present_flag", buf, &p_Dec->UsedBits);
+#ifdef PRINT_MODALITY_INFO
+    printf("modality_info_persistence_flag   = %d\n", seiModalityInfo.modality_info_persistence_flag);
+    printf("modality_type                    = %d\n", seiModalityInfo.modality_type);
+    printf("spectrum_range_present_flag      = %d\n", seiModalityInfo.spectrum_range_present_flag);
+#endif
+    if ( seiModalityInfo.spectrum_range_present_flag )
+    {
+      seiModalityInfo.min_wavelength_mantissa         = read_u_v(11, "SEI:  min_wavelength_mantissa", buf, &p_Dec->UsedBits);
+      seiModalityInfo.min_wavelength_exponent_plus15  = read_u_v(5,  "SEI:  min_wavelength_exponent_plus15", buf, &p_Dec->UsedBits);
+      seiModalityInfo.max_wavelength_mantissa         = read_u_v(11, "SEI:  max_wavelength_mantissa", buf, &p_Dec->UsedBits);
+      seiModalityInfo.max_wavelength_exponent_plus15  = read_u_v(5,  "SEI:  max_wavelength_exponent_plus15", buf, &p_Dec->UsedBits);
+#ifdef PRINT_MODALITY_INFO
+      printf("min_wavelength_mantissa          = %d\n", seiModalityInfo.min_wavelength_mantissa);
+      printf("min_wavelength_exponent_plus15   = %d\n", seiModalityInfo.min_wavelength_exponent_plus15);
+      printf("max_wavelength_mantissa          = %d\n", seiModalityInfo.max_wavelength_mantissa);
+      printf("max_wavelength_exponent_plus15   = %d\n", seiModalityInfo.max_wavelength_exponent_plus15);
+#endif
+    }
+    seiModalityInfo.modality_type_extension_bits = read_ue_v("SEI:  modality_type_extension_bits", buf, &p_Dec->UsedBits);  //modality_type_extension_bits shall be equal to 0 in the current edition
+#ifdef PRINT_MODALITY_INFO
+    printf("modality_type_extension_bits     = %d\n", seiModalityInfo.modality_type_extension_bits); 
+#endif
+    if ( seiModalityInfo.modality_type_extension_bits > 2048 ) 
+    {
+      printf ("Warning: Values of modality_type_extension_bits greater than 2048 shall not be present in bitstreams.\n");
+    }
+    else if ( seiModalityInfo.modality_type_extension_bits > 0 )
+    {
+      unsigned int reserved_modality_type_extension; 
+      reserved_modality_type_extension = read_u_v(seiModalityInfo.modality_type_extension_bits, "SEI:  reserved_modality_type_extension", buf, &p_Dec->UsedBits); // Decoders shall ignore the presence and value of mi_reserved_modality_type_extension                   
+    }
+ }
+   free( buf );
+ }
+#endif

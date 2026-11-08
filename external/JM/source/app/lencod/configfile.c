@@ -633,19 +633,24 @@ void read_slice_group_info(VideoParameters *p_Vid, InputParameters *p_Inp)
       fclose(sgfile);
       no_mem_exit("read_slice_group_info: p_Inp->run_length_minus1");
     }
-
-    // each line contains one 'run_length_minus1' value
-    for(i=0; i <= p_Inp->num_slice_groups_minus1;i++)
+    else
     {
-      ret  = fscanf(sgfile,"%d",(p_Inp->run_length_minus1+i));
-      if ( 1!=ret )
+      // each line contains one 'run_length_minus1' value
+      for(i=0; i <= p_Inp->num_slice_groups_minus1;i++)
       {
-        fclose(sgfile);
-        snprintf(errortext, ET_SIZE, "Error while reading slice group config file (line %d)", i+1);
-        error (errortext, 500);
+        ret  = fscanf(sgfile,"%d",(p_Inp->run_length_minus1+i));
+        if ( 1!=ret )
+        {
+          fclose(sgfile);
+          snprintf(errortext, ET_SIZE, "Error while reading slice group config file (line %d)", i+1);
+          error (errortext, 500);
+        }
+        else
+        {
+          // scan remaining line
+          ret = fscanf(sgfile,"%*[^\n]");
+        }
       }
-      // scan remaining line
-      ret = fscanf(sgfile,"%*[^\n]");
     }
     break;
 
@@ -730,14 +735,20 @@ void read_slice_group_info(VideoParameters *p_Vid, InputParameters *p_Inp)
           snprintf(errortext, ET_SIZE, "Error while reading slice group config file (line %d)", i + 1);
           error (errortext, 500);
         }
-        if ( *(p_Inp->slice_group_id+i) > p_Inp->num_slice_groups_minus1 )
+        else
         {
-          fclose(sgfile);
-          snprintf(errortext, ET_SIZE, "Error while reading slice group config file: slice_group_id not allowed (line %d)", i + 1);
-          error (errortext, 500);
+          if ( *(p_Inp->slice_group_id+i) > p_Inp->num_slice_groups_minus1 )
+          {
+            fclose(sgfile);
+            snprintf(errortext, ET_SIZE, "Error while reading slice group config file: slice_group_id not allowed (line %d)", i + 1);
+            error (errortext, 500);
+          }
+          else
+          {
+            // scan remaining line
+            ret = fscanf(sgfile,"%*[^\n]");
+          }
         }
-        // scan remaining line
-        ret = fscanf(sgfile,"%*[^\n]");
       }
     }
     break;

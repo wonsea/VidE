@@ -1,0 +1,934 @@
+--- external/JM/CMakeLists.txt
++++ external/JM/CMakeLists.txt
+@@ -1,5 +1,5 @@
+ # minimum required cmake version
+-cmake_minimum_required( VERSION 3.5 FATAL_ERROR )
++cmake_minimum_required( VERSION 3.10 FATAL_ERROR )
+ 
+ project( JM )
+ 
+@@ -22,8 +22,9 @@
+   endif()
+ endif()
+ 
+-set( SET_ENABLE_TRACING OFF CACHE BOOL "Set ENABLE_TRACING as a compiler flag" )
+-set( ENABLE_TRACING OFF CACHE BOOL "If SET_ENABLE_TRACING is on, it will be set to this value" )
++if (DEFINED ENABLE_TRACING)
++  set( ENABLE_TRACING OFF CACHE BOOL "ENABLE_TRACING will be set to this value" )
++endif()
+ 
+ if( CMAKE_COMPILER_IS_GNUCC )
+   set( BUILD_STATIC OFF CACHE BOOL "Build static executables" )
+@@ -70,7 +71,8 @@
+ # bb_enable_warnings( gcc -Wno-unused-variable )
+ # bb_enable_warnings( gcc-4.8 warnings-as-errors -Wno-unused-variable )
+ # for gcc 8.2:
+-bb_enable_warnings( gcc warnings-as-errors -Wno-sign-compare)
++# VidE patch: dropped warnings-as-errors for GCC 16 (new diagnostics).
++bb_enable_warnings( gcc -Wno-sign-compare)
+ bb_enable_warnings( gcc-5 -fno-strict-overflow -Wno-strict-aliasing)
+ bb_enable_warnings( gcc-7 -fno-strict-overflow -Wno-strict-aliasing)
+ 
+@@ -96,7 +98,7 @@
+ bb_enable_warnings( msvc warnings-as-errors "/wd4996 /wd5105 /wd5103" )
+ 
+ # enable sse4.1 build for all source files for gcc and clang
+-if( UNIX OR MINGW )
++if( (UNIX OR MINGW) AND NOT (CMAKE_SYSTEM_PROCESSOR STREQUAL "arm64") )
+   add_compile_options( "-msse4.1" )
+ endif()
+ 
+--- external/JM/source/app/ldecod/biaridecod.c
++++ external/JM/source/app/ldecod/biaridecod.c
+@@ -21,6 +21,7 @@
+ #include "global.h"
+ #include "memalloc.h"
+ #include "biaridecod.h"
++#include "VideCapture.h"
+ 
+ 
+ #define B_BITS    10      // Number of bits to represent the whole coding interval
+@@ -161,6 +162,7 @@
+ */
+ unsigned int biari_decode_symbol(DecodingEnvironment *dep, BiContextType *bi_ct )
+ {  
++  ++vide_jm_bins;  // VidE: per-MB bin accounting
+   unsigned int bit    = bi_ct->MPS;
+   unsigned int *value = &dep->Dvalue;
+   unsigned int *range = &dep->Drange;  
+@@ -224,6 +226,7 @@
+  */
+ unsigned int biari_decode_symbol_eq_prob(DecodingEnvironmentPtr dep)
+ {
++   ++vide_jm_bins;  // VidE: per-MB bin accounting
+    int tmp_value;
+    unsigned int *value = &dep->Dvalue;
+    int *DbitsLeft = &dep->DbitsLeft;
+@@ -257,6 +260,7 @@
+  */
+ unsigned int biari_decode_final(DecodingEnvironmentPtr dep)
+ {
++  ++vide_jm_bins;  // VidE: per-MB bin accounting
+   unsigned int range  = dep->Drange - 2;
+   int value  = dep->Dvalue;
+   value -= (range << dep->DbitsLeft);
+--- external/JM/source/app/ldecod/CMakeLists.txt
++++ external/JM/source/app/ldecod/CMakeLists.txt
+@@ -33,12 +33,10 @@
+ add_executable( ${EXE_NAME} ${SRC_FILES} ${INC_FILES} ${NATVIS_FILES} )
+ include_directories(${CMAKE_CURRENT_BINARY_DIR} . ../../lib/lcommon)
+ 
+-if( SET_ENABLE_TRACING )
+-  if( ENABLE_TRACING )
+-    target_compile_definitions( ${EXE_NAME} PUBLIC ENABLE_TRACING=1 )
+-  else()
+-    target_compile_definitions( ${EXE_NAME} PUBLIC ENABLE_TRACING=0 )
+-  endif()
++if( ENABLE_TRACING )
++  target_compile_definitions( ${EXE_NAME} PUBLIC TRACE=1 )
++else()
++  target_compile_definitions( ${EXE_NAME} PUBLIC TRACE=0 )
+ endif()
+ 
+ if( CMAKE_COMPILER_IS_GNUCC AND BUILD_STATIC )
+@@ -47,7 +45,12 @@
+ endif()
+ 
+ if(NOT MSVC)
+-  target_link_libraries( ${EXE_NAME} m Threads::Threads ${ADDITIONAL_LIBS} )
++  # VidE patch: MinGW also needs WinSock for ntohs/ntohl in rtp.c.
++  if(WIN32)
++    target_link_libraries( ${EXE_NAME} m ws2_32 Threads::Threads ${ADDITIONAL_LIBS} )
++  else()
++    target_link_libraries( ${EXE_NAME} m Threads::Threads ${ADDITIONAL_LIBS} )
++  endif()
+ else()
+   target_link_libraries( ${EXE_NAME} WS2_32 Threads::Threads ${ADDITIONAL_LIBS} )
+ endif()
+--- external/JM/source/app/ldecod/defines.h
++++ external/JM/source/app/ldecod/defines.h
+@@ -19,14 +19,14 @@
+ 
+ #ifndef _DEFINES_H_
+ #define _DEFINES_H_
+-#ifdef TRACE
+-#undef TRACE
+-#endif
++
++#ifndef TRACE
+ #if defined _DEBUG
+ # define TRACE           0     //!< 0:Trace off 1:Trace on 2:detailed CABAC context information
+ #else
+ # define TRACE           0     //!< 0:Trace off 1:Trace on 2:detailed CABAC context information
+ #endif
++#endif
+ 
+ #define JM                  "19 (FRExt)"
+ #define VERSION             "19.1"
+@@ -45,7 +45,9 @@
+ #define JM_PARALLEL_DEBLOCK       0    //!< Enables Parallel Deblocking
+ #define SIMULCAST_ENABLE          0    //!< to test the decoder
+ 
+-#define MVC_EXTENSION_ENABLE      1    //!< enable support for the Multiview High Profile
++// VidE patch: disable MVC so the decoder uses the simple single-view output
++// path (p_out), which vide_avc_helper relies on.
++#define MVC_EXTENSION_ENABLE      0    //!< enable support for the Multiview High Profile
+ #define ENABLE_DEC_STATS          0    //!< enable decoder statistics collection
+ 
+ #define MVC_INIT_VIEW_ID          -1
+--- external/JM/source/app/ldecod/image.c
++++ external/JM/source/app/ldecod/image.c
+@@ -33,6 +33,7 @@
+ 
+ #include "global.h"
+ #include "image.h"
++#include "VideCapture.h"  // VidE: picture capture hook
+ #include "fmo.h"
+ #include "annexb.h"
+ #include "nalu.h"
+@@ -1551,6 +1552,7 @@
+           ++ByteStartPosition;
+         }
+         arideco_start_decoding (&currSlice->partArr[0].de_cabac, currStream->streamBuffer, ByteStartPosition, &currStream->read_len);
++        vide_jm_set_cabac_base(ByteStartPosition);  // VidE: per-MB bit range base
+       }
+       // printf ("read_new_slice: returning %s\n", current_header == SOP?"SOP":"SOS");
+       //FreeNALU(nalu);
+@@ -1893,6 +1895,8 @@
+     return;
+   }
+ 
++  vide_jm_capture_picture(p_Vid, *dec_picture);  // VidE: snapshot the frame
++
+ #if (DISABLE_ERC == 0)
+   recfr.p_Vid = p_Vid;
+   recfr.yptr = &(*dec_picture)->imgY[0][0];
+@@ -2523,10 +2527,26 @@
+ #endif
+ 
+     // Initializes the current macroblock
++    vide_jm_capture_slice_info(currSlice);  // VidE: first-slice header of this picture
+     start_macroblock(currSlice, &currMB);
+     // Get the syntax elements from the NAL
+-    currSlice->read_one_macroblock(currMB);
++    {
++      const unsigned int vide_bins0 = vide_jm_bins;  // VidE: per-MB bin accounting
++      const int vide_cabac = p_Vid->active_pps->entropy_coding_mode_flag;
++      const unsigned int vide_bit0 =
++          vide_cabac ? vide_jm_cabac_base() + (unsigned int)arideco_bits_read(&currSlice->partArr[0].de_cabac)
++                     : 8u + (unsigned int)currSlice->partArr[0].bitstream->frame_bitoffset;
++      currSlice->read_one_macroblock(currMB);
++      const unsigned int vide_bit1 =
++          vide_cabac ? vide_jm_cabac_base() + (unsigned int)arideco_bits_read(&currSlice->partArr[0].de_cabac)
++                     : 8u + (unsigned int)currSlice->partArr[0].bitstream->frame_bitoffset;
++      vide_jm_capture_mb_bits(currMB->mbAddrX, vide_jm_bins - vide_bins0);
++      vide_jm_capture_mb_bit_range(currMB->mbAddrX, vide_bit0,
++                                   vide_bit1 >= vide_bit0 ? vide_bit1 - vide_bit0 : 0);
++      vide_jm_capture_mb_slice(currMB->mbAddrX, vide_jm_current_slice_index());
++    }
+     decode_one_macroblock(currMB, currSlice->dec_picture);
++    vide_jm_capture_mb_pred_resi(p_Vid, currSlice, currMB);  // VidE: prediction/residual
+ 
+     if(currSlice->mb_aff_frame_flag && currMB->mb_field)
+     {
+--- external/JM/source/app/ldecod/macroblock.c
++++ external/JM/source/app/ldecod/macroblock.c
+@@ -7,7 +7,7 @@
+  *
+  * \author
+  *    Main contributors (see contributors.h for copyright, address and affiliation details)
+- *    - Inge Lille-Langøy               <inge.lille-langoy@telenor.com>
++ *    - Inge Lille-Langï¿½y               <inge.lille-langoy@telenor.com>
+  *    - Rickard Sjoberg                 <rickard.sjoberg@era.ericsson.se>
+  *    - Jani Lainema                    <jani.lainema@nokia.com>
+  *    - Sebastian Purreiter             <sebastian.purreiter@mch.siemens.de>
+@@ -37,6 +37,7 @@
+ #include "image.h"
+ #include "mb_access.h"
+ #include "biaridecod.h"
++#include "VideCapture.h"  // VidE: per-MB QP-delta presence hook
+ #include "transform.h"
+ #include "mc_prediction.h"
+ #include "quant.h"
+@@ -228,6 +229,7 @@
+ 
+   currSlice->qp = ((currSlice->qp + currMB->delta_quant + 52 + 2*p_Vid->bitdepth_luma_qp_scale)%(52+p_Vid->bitdepth_luma_qp_scale)) - p_Vid->bitdepth_luma_qp_scale;
+   update_qp(currMB, currSlice->qp);
++  vide_jm_capture_mb_qp_coded(currMB->mbAddrX, 1);  // VidE: MB coded mb_qp_delta
+ }
+ 
+ /*!
+--- external/JM/source/app/ldecod/VideCapture.c
++++ external/JM/source/app/ldecod/VideCapture.c
+@@ -0,0 +1,495 @@
++// VidE capture hook implementation (see VideCapture.h).
++#include "VideCapture.h"
++
++#include <stdlib.h>
++#include <string.h>
++
++#include "global.h"
++#include "mbuffer.h"
++
++#define VIDE_JM_MAX_QUEUE 8
++#define VIDE_JM_MAX_MBS (1 << 18)  // 262144 macroblocks (>= 8K frame)
++
++unsigned int vide_jm_bins = 0;                       // CABAC bins (see VideCapture.h)
++static unsigned int g_mb_bins[VIDE_JM_MAX_MBS];      // per-MB bin deltas
++static unsigned char g_mb_qp_coded[VIDE_JM_MAX_MBS]; // per-MB mb_qp_delta presence
++static unsigned int g_mb_bit_off[VIDE_JM_MAX_MBS];   // per-MB NAL-RBSP bit offset
++static unsigned int g_mb_bit_len[VIDE_JM_MAX_MBS];   // per-MB bit length
++static int g_mb_slice[VIDE_JM_MAX_MBS];              // per-MB global VCL slice ordinal
++static unsigned int g_cabac_base = 0;                // NAL-RBSP bit of CABAC data start
++static int g_global_slice = 0;                       // running VCL slice ordinal
++static int g_current_slice = 0;                      // ordinal of the slice being decoded
++
++void vide_jm_capture_mb_bits(int mb_index, unsigned int bins) {
++    if (mb_index >= 0 && mb_index < VIDE_JM_MAX_MBS) {
++        g_mb_bins[mb_index] = bins;
++    }
++}
++
++void vide_jm_set_cabac_base(int byte_start_pos) {
++    // streamBuffer skips the 1-byte NAL header, so NAL-RBSP byte = byte_start_pos + 1.
++    g_cabac_base = (unsigned int)(byte_start_pos + 1) * 8u;
++}
++
++unsigned int vide_jm_cabac_base(void) {
++    return g_cabac_base;
++}
++
++void vide_jm_capture_mb_bit_range(int mb_index, unsigned int bit_offset, unsigned int bit_length) {
++    if (mb_index >= 0 && mb_index < VIDE_JM_MAX_MBS) {
++        g_mb_bit_off[mb_index] = bit_offset;
++        g_mb_bit_len[mb_index] = bit_length;
++    }
++}
++
++int vide_jm_current_slice_index(void) {
++    return g_current_slice;
++}
++
++void vide_jm_capture_mb_slice(int mb_index, int slice_index) {
++    if (mb_index >= 0 && mb_index < VIDE_JM_MAX_MBS) {
++        g_mb_slice[mb_index] = slice_index;
++    }
++}
++
++void vide_jm_capture_mb_qp_coded(int mb_index, int coded) {
++    if (mb_index >= 0 && mb_index < VIDE_JM_MAX_MBS) {
++        g_mb_qp_coded[mb_index] = coded ? 1 : 0;
++    }
++}
++
++int vide_jm_mb_qp_coded(int mb_index) {
++    if (mb_index >= 0 && mb_index < VIDE_JM_MAX_MBS) {
++        return g_mb_qp_coded[mb_index];
++    }
++    return 0;
++}
++
++static JmFrameCapture g_queue[VIDE_JM_MAX_QUEUE];
++static int g_head = 0;
++static int g_count = 0;
++
++// All slice headers of the current picture. The first slice also fills the
++// legacy scalar fields (attached to the next capture).
++static JmFrameCapture g_slice;  // only the slices[] scalar mirror is used
++static JmSliceInfo* g_slices = NULL;
++static int g_slices_count = 0;
++static int g_slices_cap = 0;
++static int g_last_slice_nr = -1;
++
++static void fill_one_slice(JmSliceInfo* s, const struct slice* slice) {
++    s->slice_type = slice->slice_type;
++    s->nal_ref_idc = slice->nal_reference_idc;
++    s->idr_flag = slice->idr_flag;
++    s->idr_pic_id = slice->idr_pic_id;
++    s->pic_parameter_set_id = slice->pic_parameter_set_id;
++    s->frame_num = slice->frame_num;
++    s->field_pic_flag = (int)slice->field_pic_flag;
++    s->bottom_field_flag = slice->bottom_field_flag;
++    s->pic_order_cnt_lsb = slice->pic_order_cnt_lsb;
++    s->delta_pic_order_cnt_bottom = slice->delta_pic_order_cnt_bottom;
++    s->delta_pic_order_cnt0 = slice->delta_pic_order_cnt[0];
++    s->delta_pic_order_cnt1 = slice->delta_pic_order_cnt[1];
++    s->redundant_pic_cnt = slice->redundant_pic_cnt;
++    s->num_ref_idx_l0_active = slice->num_ref_idx_active[LIST_0];
++    s->num_ref_idx_l1_active = slice->num_ref_idx_active[LIST_1];
++    s->slice_qp_delta = slice->slice_qp_delta;
++    s->slice_qp = slice->qp;
++    s->ref_l0_count = 0;
++    s->ref_l1_count = 0;
++    if (slice->listX != NULL) {
++        const int n0 = (int)slice->listXsize[LIST_0];
++        const int n1 = (int)slice->listXsize[LIST_1];
++        for (int i = 0; i < n0 && i < 16; ++i) {
++            const struct storable_picture* rp = slice->listX[LIST_0][i];
++            s->ref_l0_poc[i] = rp != NULL ? rp->frame_poc : -9999;
++            s->ref_l0_count = i + 1;
++        }
++        for (int i = 0; i < n1 && i < 16; ++i) {
++            const struct storable_picture* rp = slice->listX[LIST_1][i];
++            s->ref_l1_poc[i] = rp != NULL ? rp->frame_poc : -9999;
++            s->ref_l1_count = i + 1;
++        }
++    }
++}
++
++void vide_jm_capture_slice_info(const struct slice* slice) {
++    if (slice == NULL) {
++        return;
++    }
++    // A new slice starts whenever its index within the picture changes.
++    if ((int)slice->current_slice_nr == g_last_slice_nr) {
++        return;
++    }
++    g_last_slice_nr = (int)slice->current_slice_nr;
++    g_current_slice = g_global_slice++;  // VidE: global VCL slice ordinal
++    if (g_slices_count == g_slices_cap) {
++        const int cap = g_slices_cap > 0 ? g_slices_cap * 2 : 8;
++        JmSliceInfo* grown = (JmSliceInfo*)realloc(g_slices, (size_t)cap * sizeof(JmSliceInfo));
++        if (grown == NULL) {
++            return;
++        }
++        g_slices = grown;
++        g_slices_cap = cap;
++    }
++    fill_one_slice(&g_slices[g_slices_count], slice);
++    g_slices[g_slices_count].slice_index = g_current_slice;  // VidE
++    if (g_slices_count == 0) {
++        // Mirror the first slice into the legacy scalar fields.
++        g_slice.slice_type = g_slices[0].slice_type;
++        g_slice.nal_ref_idc = g_slices[0].nal_ref_idc;
++        g_slice.idr_flag = g_slices[0].idr_flag;
++        g_slice.idr_pic_id = g_slices[0].idr_pic_id;
++        g_slice.pic_parameter_set_id = g_slices[0].pic_parameter_set_id;
++        g_slice.frame_num = g_slices[0].frame_num;
++        g_slice.field_pic_flag = g_slices[0].field_pic_flag;
++        g_slice.bottom_field_flag = g_slices[0].bottom_field_flag;
++        g_slice.pic_order_cnt_lsb = g_slices[0].pic_order_cnt_lsb;
++        g_slice.delta_pic_order_cnt_bottom = g_slices[0].delta_pic_order_cnt_bottom;
++        g_slice.delta_pic_order_cnt0 = g_slices[0].delta_pic_order_cnt0;
++        g_slice.delta_pic_order_cnt1 = g_slices[0].delta_pic_order_cnt1;
++        g_slice.redundant_pic_cnt = g_slices[0].redundant_pic_cnt;
++        g_slice.num_ref_idx_l0_active = g_slices[0].num_ref_idx_l0_active;
++        g_slice.num_ref_idx_l1_active = g_slices[0].num_ref_idx_l1_active;
++        g_slice.slice_qp_delta = g_slices[0].slice_qp_delta;
++        g_slice.slice_qp = g_slices[0].slice_qp;
++    }
++    ++g_slices_count;
++}
++
++// Per-frame prediction/residual accumulators (coded size; cropped at capture).
++static int16_t* g_pred_y = NULL;
++static int16_t* g_pred_u = NULL;
++static int16_t* g_pred_v = NULL;
++static int16_t* g_resi_y = NULL;
++static int16_t* g_resi_u = NULL;
++static int16_t* g_resi_v = NULL;
++static int g_pr_w = 0, g_pr_h = 0, g_pr_cw = 0, g_pr_ch = 0;
++static int g_pr_has = 0;
++
++static void pr_free(void) {
++    free(g_pred_y); free(g_pred_u); free(g_pred_v);
++    free(g_resi_y); free(g_resi_u); free(g_resi_v);
++    g_pred_y = g_pred_u = g_pred_v = NULL;
++    g_resi_y = g_resi_u = g_resi_v = NULL;
++    g_pr_w = g_pr_h = g_pr_cw = g_pr_ch = 0;
++}
++
++static void pr_alloc(int w, int h, int cw, int ch) {
++    if (g_pred_y != NULL && w == g_pr_w && h == g_pr_h && cw == g_pr_cw && ch == g_pr_ch) {
++        return;  // reuse (caller zeroes)
++    }
++    pr_free();
++    g_pred_y = (int16_t*)calloc((size_t)w * h, sizeof(int16_t));
++    g_resi_y = (int16_t*)calloc((size_t)w * h, sizeof(int16_t));
++    if (cw > 0 && ch > 0) {
++        g_pred_u = (int16_t*)calloc((size_t)cw * ch, sizeof(int16_t));
++        g_pred_v = (int16_t*)calloc((size_t)cw * ch, sizeof(int16_t));
++        g_resi_u = (int16_t*)calloc((size_t)cw * ch, sizeof(int16_t));
++        g_resi_v = (int16_t*)calloc((size_t)cw * ch, sizeof(int16_t));
++    }
++    g_pr_w = w; g_pr_h = h; g_pr_cw = cw; g_pr_ch = ch;
++}
++
++void vide_jm_capture_mb_pred_resi(const struct video_par* p_Vid, const struct slice* slice,
++                                  const struct macroblock_dec* mb) {
++    if (p_Vid == NULL || slice == NULL || mb == NULL || slice->mb_pred == NULL) {
++        return;
++    }
++    const int w = p_Vid->width;
++    const int h = p_Vid->height;
++    const int cw = p_Vid->width_cr;
++    const int ch = p_Vid->height_cr;
++    if (w <= 0 || h <= 0) {
++        return;
++    }
++    if (mb->mbAddrX == 0) {
++        pr_alloc(w, h, cw, ch);
++        if (g_pred_y != NULL) {
++            memset(g_pred_y, 0, (size_t)w * h * sizeof(int16_t));
++            memset(g_resi_y, 0, (size_t)w * h * sizeof(int16_t));
++        }
++        if (g_pred_u != NULL) {
++            memset(g_pred_u, 0, (size_t)cw * ch * sizeof(int16_t));
++            memset(g_pred_v, 0, (size_t)cw * ch * sizeof(int16_t));
++            memset(g_resi_u, 0, (size_t)cw * ch * sizeof(int16_t));
++            memset(g_resi_v, 0, (size_t)cw * ch * sizeof(int16_t));
++        }
++        g_pr_has = 0;
++    }
++    if (g_pred_y == NULL) {
++        return;
++    }
++    const int bx = mb->pix_x;
++    const int by = mb->pix_y;
++    for (int r = 0; r < 16; ++r) {
++        for (int c = 0; c < 16; ++c) {
++            const int x = bx + c, y = by + r;
++            if (x >= 0 && x < w && y >= 0 && y < h) {
++                g_pred_y[(size_t)y * w + x] = (int16_t)slice->mb_pred[0][r][c];
++                g_resi_y[(size_t)y * w + x] = (int16_t)slice->mb_rres[0][r][c];
++            }
++        }
++    }
++    if (g_pred_u != NULL && slice->mb_pred[1] != NULL && slice->mb_pred[2] != NULL) {
++        const int cbx = bx / 2;
++        const int cby = by / 2;
++        const int mcw = p_Vid->mb_cr_size_x;
++        const int mch = p_Vid->mb_cr_size_y;
++        for (int r = 0; r < mch; ++r) {
++            for (int c = 0; c < mcw; ++c) {
++                const int x = cbx + c, y = cby + r;
++                if (x >= 0 && x < cw && y >= 0 && y < ch) {
++                    g_pred_u[(size_t)y * cw + x] = (int16_t)slice->mb_pred[1][r][c];
++                    g_pred_v[(size_t)y * cw + x] = (int16_t)slice->mb_pred[2][r][c];
++                    g_resi_u[(size_t)y * cw + x] = (int16_t)slice->mb_rres[1][r][c];
++                    g_resi_v[(size_t)y * cw + x] = (int16_t)slice->mb_rres[2][r][c];
++                }
++            }
++        }
++    }
++    g_pr_has = 1;
++}
++
++static void copy_slice_fields(JmFrameCapture* cap) {
++    cap->slice_type = g_slice.slice_type;
++    cap->nal_ref_idc = g_slice.nal_ref_idc;
++    cap->idr_flag = g_slice.idr_flag;
++    cap->idr_pic_id = g_slice.idr_pic_id;
++    cap->pic_parameter_set_id = g_slice.pic_parameter_set_id;
++    cap->frame_num = g_slice.frame_num;
++    cap->field_pic_flag = g_slice.field_pic_flag;
++    cap->bottom_field_flag = g_slice.bottom_field_flag;
++    cap->pic_order_cnt_lsb = g_slice.pic_order_cnt_lsb;
++    cap->delta_pic_order_cnt_bottom = g_slice.delta_pic_order_cnt_bottom;
++    cap->delta_pic_order_cnt0 = g_slice.delta_pic_order_cnt0;
++    cap->delta_pic_order_cnt1 = g_slice.delta_pic_order_cnt1;
++    cap->redundant_pic_cnt = g_slice.redundant_pic_cnt;
++    cap->num_ref_idx_l0_active = g_slice.num_ref_idx_l0_active;
++    cap->num_ref_idx_l1_active = g_slice.num_ref_idx_l1_active;
++    cap->slice_qp_delta = g_slice.slice_qp_delta;
++    cap->slice_qp = g_slice.slice_qp;
++
++    // All slice headers of this picture.
++    if (g_slices_count > 0) {
++        cap->slices = (JmSliceInfo*)malloc((size_t)g_slices_count * sizeof(JmSliceInfo));
++        if (cap->slices != NULL) {
++            memcpy(cap->slices, g_slices, (size_t)g_slices_count * sizeof(JmSliceInfo));
++            cap->slice_count = g_slices_count;
++        }
++    }
++    g_slices_count = 0;
++    g_last_slice_nr = -1;
++
++    memset(&g_slice, 0, sizeof(g_slice));  // ready for the next picture
++}
++
++static int map_block_type(short mb_type) {
++    if (mb_type < 0) {
++        return 2;  // skip
++    }
++    if (is_intra_mb(mb_type)) {
++        return 0;  // intra
++    }
++    return 1;      // inter
++}
++
++void vide_jm_capture_picture(VideoParameters* p_Vid, StorablePicture* pic) {
++    if (p_Vid == NULL || pic == NULL || pic->imgY == NULL) {
++        return;
++    }
++    if (g_count >= VIDE_JM_MAX_QUEUE) {
++        return;  // consumer is behind; drop
++    }
++
++    const int coded_w = pic->size_x;
++    const int coded_h = pic->size_y;
++    if (coded_w <= 0 || coded_h <= 0) {
++        return;
++    }
++
++    // Apply the cropping window (H.264 7.4.2.1.1) so the exported picture is the
++    // display (cropped) image, matching the SPS the main process parsed. JM
++    // keeps the coded (MB-aligned) planes with a stride; we copy the crop window.
++    int crop_left = 0, crop_right = 0, crop_top = 0, crop_bottom = 0;
++    int sub_w = 1;
++    int sub_h = 1;
++    const int chroma_format_idc = pic->chroma_format_idc;
++    const int frame2x = 2 - pic->frame_mbs_only_flag;
++    if (chroma_format_idc == 1) {          // 4:2:0
++        sub_w = 2;
++        sub_h = 2 * frame2x;
++    } else if (chroma_format_idc == 2) {   // 4:2:2
++        sub_w = 2;
++        sub_h = 1 * frame2x;
++    } else if (chroma_format_idc == 3) {   // 4:4:4
++        sub_w = 1;
++        sub_h = 1 * frame2x;
++    } else {                                // monochrome (no chroma crop used)
++        sub_w = 1;
++        sub_h = frame2x;
++    }
++    if (pic->frame_cropping_flag) {
++        crop_left = sub_w * pic->frame_crop_left_offset;
++        crop_right = sub_w * pic->frame_crop_right_offset;
++        crop_top = sub_h * pic->frame_crop_top_offset;
++        crop_bottom = sub_h * pic->frame_crop_bottom_offset;
++    }
++    const int out_w = coded_w - crop_left - crop_right;
++    const int out_h = coded_h - crop_top - crop_bottom;
++
++    const int cw = pic->size_x_cr;
++    const int ch = pic->size_y_cr;
++    // Chroma crop is expressed directly in chroma samples (the H.264 crop unit
++    // for chroma equals sub_w/sub_h, so dividing the luma crop by it is exact).
++    const int c_crop_left = sub_w > 0 ? crop_left / sub_w : crop_left;
++    const int c_crop_right = sub_w > 0 ? crop_right / sub_w : crop_right;
++    const int c_crop_top = sub_h > 0 ? crop_top / sub_h : crop_top;
++    const int c_crop_bottom = sub_h > 0 ? crop_bottom / sub_h : crop_bottom;
++    const int out_cw = cw - c_crop_left - c_crop_right;
++    const int out_ch = ch - c_crop_top - c_crop_bottom;
++    if (out_w <= 0 || out_h <= 0 || out_cw <= 0 || out_ch <= 0) {
++        return;
++    }
++
++    JmFrameCapture* cap = &g_queue[(g_head + g_count) % VIDE_JM_MAX_QUEUE];
++    memset(cap, 0, sizeof(*cap));
++    cap->width = out_w;
++    cap->height = out_h;
++    cap->chroma_width = out_cw;
++    cap->chroma_height = out_ch;
++    cap->bit_depth = p_Vid->active_sps != NULL ? p_Vid->active_sps->bit_depth_luma_minus8 + 8 : 8;
++    cap->poc = pic->frame_poc;
++    cap->is_keyframe = pic->idr_flag != 0;
++    copy_slice_fields(cap);  // first-slice header recorded this picture
++
++    // JM stores samples as `imgpel` (uint16 for IMGTYPE==1 builds), so copy
++    // sample-by-sample and normalise to 8 bit for VidE's 8-bit reco path.
++    const int shift = cap->bit_depth > 8 ? (cap->bit_depth - 8) : 0;
++
++    cap->y = (uint8_t*)malloc((size_t)out_w * out_h);
++    cap->u = (uint8_t*)malloc((size_t)out_cw * out_ch);
++    cap->v = (uint8_t*)malloc((size_t)out_cw * out_ch);
++    if (cap->y == NULL || cap->u == NULL || cap->v == NULL) {
++        free(cap->y); free(cap->u); free(cap->v);
++        memset(cap, 0, sizeof(*cap));
++        return;
++    }
++    for (int r = 0; r < out_h; ++r) {
++        const imgpel* src = pic->imgY[r + crop_top] + crop_left;
++        uint8_t* dst = cap->y + (size_t)r * out_w;
++        for (int c = 0; c < out_w; ++c) {
++            dst[c] = (uint8_t)(src[c] >> shift);
++        }
++    }
++    for (int r = 0; r < out_ch; ++r) {
++        const imgpel* su = pic->imgUV[0][r + c_crop_top] + c_crop_left;
++        const imgpel* sv = pic->imgUV[1][r + c_crop_top] + c_crop_left;
++        uint8_t* du = cap->u + (size_t)r * out_cw;
++        uint8_t* dv = cap->v + (size_t)r * out_cw;
++        for (int c = 0; c < out_cw; ++c) {
++            du[c] = (uint8_t)(su[c] >> shift);
++            dv[c] = (uint8_t)(sv[c] >> shift);
++        }
++    }
++
++    const int mb_w = coded_w / 16;
++    const int mb_h = coded_h / 16;
++    const int mb_total = mb_w * mb_h;
++    if (mb_total > 0) {
++        cap->mbs = (JmMbInfo*)calloc((size_t)mb_total, sizeof(JmMbInfo));
++        if (cap->mbs != NULL) {
++            for (int i = 0; i < mb_total; ++i) {
++                const Macroblock* mb = &p_Vid->mb_data[i];
++                JmMbInfo* info = &cap->mbs[i];
++                info->x = (i % mb_w) * 16;
++                info->y = (i / mb_w) * 16;
++                info->w = 16;
++                info->h = 16;
++                info->qp = mb->qp;
++                info->block_type = map_block_type(mb->mb_type);
++                info->qp_coded = vide_jm_mb_qp_coded(i);  // VidE: explicit mb_qp_delta?
++                info->bits = g_mb_bins[i];  // VidE: CABAC bins for this MB
++    info->bit_offset = g_mb_bit_off[i];  // VidE: NAL-RBSP bit range
++    info->bit_length = g_mb_bit_len[i];
++    info->slice_index = g_mb_slice[i];   // VidE: global VCL slice ordinal
++                for (int k = 0; k < 4; ++k) {
++                    info->b8mode[k] = mb->b8mode[k];
++                    info->b8pdir[k] = mb->b8pdir[k];
++                }
++                info->ref0 = 0;
++                info->ref1 = -1;
++                info->mv0x = mb->mvd[LIST_0][0][0][0];
++                info->mv0y = mb->mvd[LIST_0][0][0][1];
++                info->mv1x = mb->mvd[LIST_1][0][0][0];
++                info->mv1y = mb->mvd[LIST_1][0][0][1];
++            }
++            cap->mb_count = mb_total;
++        }
++    }
++
++    // Attach the accumulated prediction/residual, cropped to display size.
++    if (g_pr_has && g_pred_y != NULL) {
++        const int lw = out_w, lh = out_h;
++        cap->pred_y = (int16_t*)malloc((size_t)lw * lh * sizeof(int16_t));
++        cap->resi_y = (int16_t*)malloc((size_t)lw * lh * sizeof(int16_t));
++        for (int r = 0; r < lh; ++r) {
++            for (int c = 0; c < lw; ++c) {
++                const int sy = r + crop_top, sx = c + crop_left;
++                const size_t di = (size_t)r * lw + c;
++                if (sy < g_pr_h && sx < g_pr_w) {
++                    cap->pred_y[di] = g_pred_y[(size_t)sy * g_pr_w + sx];
++                    cap->resi_y[di] = g_resi_y[(size_t)sy * g_pr_w + sx];
++                } else {
++                    cap->pred_y[di] = 0;
++                    cap->resi_y[di] = 0;
++                }
++            }
++        }
++        if (g_pred_u != NULL && out_cw > 0 && out_ch > 0) {
++            cap->pred_u = (int16_t*)malloc((size_t)out_cw * out_ch * sizeof(int16_t));
++            cap->pred_v = (int16_t*)malloc((size_t)out_cw * out_ch * sizeof(int16_t));
++            cap->resi_u = (int16_t*)malloc((size_t)out_cw * out_ch * sizeof(int16_t));
++            cap->resi_v = (int16_t*)malloc((size_t)out_cw * out_ch * sizeof(int16_t));
++            for (int r = 0; r < out_ch; ++r) {
++                for (int c = 0; c < out_cw; ++c) {
++                    const int sy = r + c_crop_top, sx = c + c_crop_left;
++                    const size_t di = (size_t)r * out_cw + c;
++                    if (sy < g_pr_ch && sx < g_pr_cw) {
++                        cap->pred_u[di] = g_pred_u[(size_t)sy * g_pr_cw + sx];
++                        cap->pred_v[di] = g_pred_v[(size_t)sy * g_pr_cw + sx];
++                        cap->resi_u[di] = g_resi_u[(size_t)sy * g_pr_cw + sx];
++                        cap->resi_v[di] = g_resi_v[(size_t)sy * g_pr_cw + sx];
++                    } else {
++                        cap->pred_u[di] = 0; cap->pred_v[di] = 0;
++                        cap->resi_u[di] = 0; cap->resi_v[di] = 0;
++                    }
++                }
++            }
++        }
++        cap->has_pred = 1;
++        cap->has_resi = 1;
++    }
++
++    // Reset the per-MB bin deltas / QP flags for the next picture.
++    if (mb_total > 0 && mb_total <= VIDE_JM_MAX_MBS) {
++        memset(g_mb_bins, 0, (size_t)mb_total * sizeof(unsigned int));
++        memset(g_mb_qp_coded, 0, (size_t)mb_total * sizeof(unsigned char));
++        memset(g_mb_bit_off, 0, (size_t)mb_total * sizeof(unsigned int));
++        memset(g_mb_bit_len, 0, (size_t)mb_total * sizeof(unsigned int));
++        memset(g_mb_slice, 0, (size_t)mb_total * sizeof(int));
++    }
++
++    ++g_count;
++}
++
++int vide_jm_pop_capture(JmFrameCapture* out) {
++    if (g_count <= 0) {
++        return 0;
++    }
++    *out = g_queue[g_head];
++    memset(&g_queue[g_head], 0, sizeof(g_queue[g_head]));
++    g_head = (g_head + 1) % VIDE_JM_MAX_QUEUE;
++    --g_count;
++    return 1;
++}
+--- external/JM/source/app/ldecod/VideCapture.h
++++ external/JM/source/app/ldecod/VideCapture.h
+@@ -0,0 +1,167 @@
++// VidE capture hook for the JM (H.264) reference decoder.
++//
++// JM finishes a picture in exit_picture(), then hands it to the DPB (which may
++// recycle buffers). VidE's helper needs the reconstructed samples and the
++// per-macroblock coding info, so this hook snapshots the finished picture into
++// a FIFO right before it leaves exit_picture().
++//
++// Zero effect on decoding: it only reads existing structures and stores copies.
++//
++// Bit-range convention (v0.39+): each macroblock records `bit_offset`/
++// `bit_length` (relative to its slice NAL RBSP) plus a global VCL slice ordinal
++// (`slice_index`), so multi-slice frames map every block to its own NAL. See
++// external/patches/README.md.
++#pragma once
++
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef struct JmMbInfo {
++    int32_t x;
++    int32_t y;
++    int32_t w;
++    int32_t h;
++    int32_t qp;
++    int32_t block_type;  // 0 intra, 1 inter, 2 skip, 3 unknown
++    int32_t qp_coded;    // 1 when this MB coded an explicit mb_qp_delta
++    int32_t ref0;
++    int32_t ref1;
++    int32_t mv0x;
++    int32_t mv0y;
++    int32_t mv1x;
++    int32_t mv1y;
++    uint32_t bits;
++    uint32_t bit_offset;  // VidE: NAL-RBSP-relative bit range (v0.39)
++    uint32_t bit_length;
++    int32_t slice_index;  // VidE: global VCL slice ordinal of this MB (v0.46)
++    int32_t b8mode[4];  // per-8x8 partition mode
++    int32_t b8pdir[4];  // per-8x8 prediction direction (0/1/2)
++} JmMbInfo;
++
++// One AVC slice header (H.264 7.3.3), captured per slice.
++typedef struct JmSliceInfo {
++    int32_t slice_type;
++    int32_t nal_ref_idc;
++    int32_t idr_flag;
++    int32_t idr_pic_id;
++    int32_t pic_parameter_set_id;
++    uint32_t frame_num;
++    int32_t field_pic_flag;
++    int32_t bottom_field_flag;
++    uint32_t pic_order_cnt_lsb;
++    int32_t delta_pic_order_cnt_bottom;
++    int32_t delta_pic_order_cnt0;
++    int32_t delta_pic_order_cnt1;
++    int32_t redundant_pic_cnt;
++    int32_t num_ref_idx_l0_active;
++    int32_t num_ref_idx_l1_active;
++    int32_t slice_qp_delta;
++    int32_t slice_qp;
++    int32_t ref_l0_poc[16];
++    int32_t ref_l1_poc[16];
++    int32_t ref_l0_count;
++    int32_t ref_l1_count;
++    int32_t slice_index;  // VidE: global VCL slice ordinal (v0.46)
++} JmSliceInfo;
++
++typedef struct JmFrameCapture {
++    int32_t width;       // cropped (display) luma width
++    int32_t height;      // cropped (display) luma height
++    int32_t bit_depth;   // source bit depth (8..16) of the coded stream
++    int32_t poc;
++    int32_t is_keyframe;
++    int32_t chroma_width;   // cropped chroma width
++    int32_t chroma_height;  // cropped chroma height
++    uint8_t* y;  // tightly packed 8-bit (normalised), width x height
++    uint8_t* u;  // tightly packed 8-bit (normalised), chroma_width x chroma_height
++    uint8_t* v;
++    JmMbInfo* mbs;
++    int32_t mb_count;
++
++    // First slice header of this picture (H.264 7.3.3).
++    int32_t slice_type;
++    int32_t nal_ref_idc;
++    int32_t idr_flag;
++    int32_t idr_pic_id;
++    int32_t pic_parameter_set_id;
++    uint32_t frame_num;
++    int32_t field_pic_flag;
++    int32_t bottom_field_flag;
++    uint32_t pic_order_cnt_lsb;
++    int32_t delta_pic_order_cnt_bottom;
++    int32_t delta_pic_order_cnt0;
++    int32_t delta_pic_order_cnt1;
++    int32_t redundant_pic_cnt;
++    int32_t num_ref_idx_l0_active;
++    int32_t num_ref_idx_l1_active;
++    int32_t slice_qp_delta;
++    int32_t slice_qp;
++
++    // All slice headers of this picture (H.264 pictures may have multiple slices).
++    JmSliceInfo* slices;
++    int32_t slice_count;
++
++    // Per-frame prediction and residual (cropped display size), accumulated
++    // per macroblock. Signed 16-bit so residual can be negative.
++    int16_t* pred_y;
++    int16_t* pred_u;
++    int16_t* pred_v;
++    int16_t* resi_y;
++    int16_t* resi_u;
++    int16_t* resi_v;
++    int32_t has_pred;
++    int32_t has_resi;
++} JmFrameCapture;
++
++// Called from exit_picture(); copies the finished picture and queues it.
++struct storable_picture;
++struct video_par;
++struct slice;
++struct macroblock_dec;
++void vide_jm_capture_picture(struct video_par* p_Vid, struct storable_picture* pic);
++
++// Records the prediction and residual of the macroblock just decoded (called
++// from the MB loop after decode_one_macroblock). Accumulates into per-frame
++// buffers attached to the next vide_jm_capture_picture().
++void vide_jm_capture_mb_pred_resi(const struct video_par* p_Vid, const struct slice* slice,
++                                  const struct macroblock_dec* mb);
++
++// Records the first slice header of the current picture (called from the MB loop
++// when the slice's first macroblock is decoded). Fields are attached to the next
++// vide_jm_capture_picture().
++void vide_jm_capture_slice_info(const struct slice* slice);
++
++// Pops the oldest queued capture. Returns 1 and fills `out` when available;
++// the caller owns the buffers and must free y/u/v/mbs.
++int vide_jm_pop_capture(JmFrameCapture* out);
++
++// VidE per-MB bin accounting. `vide_jm_bins` is incremented by the CABAC
++// primitives; the per-macroblock decode loop records each MB's delta via
++// vide_jm_capture_mb_bits(mb_index, ...).
++extern unsigned int vide_jm_bins;
++void vide_jm_capture_mb_bits(int mb_index, unsigned int bins);
++
++// VidE per-MB bit range (NAL-RBSP-relative). The slice's CABAC data start byte
++// (within the RBSP after the NAL header) is recorded once via
++// vide_jm_set_cabac_base(); each MB records its [offset, offset+length) range.
++void vide_jm_set_cabac_base(int byte_start_pos);
++unsigned int vide_jm_cabac_base(void);
++void vide_jm_capture_mb_bit_range(int mb_index, unsigned int bit_offset, unsigned int bit_length);
++
++// VidE per-MB global VCL slice ordinal (AVC multi-slice pairing). The current
++// slice's ordinal is exposed by vide_jm_current_slice_index(); the MB loop tags
++// each macroblock with it.
++int vide_jm_current_slice_index(void);
++void vide_jm_capture_mb_slice(int mb_index, int slice_index);
++
++// VidE per-MB QP-delta presence. read_delta_quant() flags the MB that coded an
++// explicit mb_qp_delta; the capture reads it via vide_jm_mb_qp_coded().
++void vide_jm_capture_mb_qp_coded(int mb_index, int coded);
++int vide_jm_mb_qp_coded(int mb_index);
++
++#ifdef __cplusplus
++}
++#endif
+--- external/JM/source/lib/lcommon/ifunctions.h
++++ external/JM/source/lib/lcommon/ifunctions.h
+@@ -17,7 +17,9 @@
+ #ifndef _IFUNCTIONS_H_
+ #define _IFUNCTIONS_H_
+ 
+-# if !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
++// VidE patch: never blank out `static`/`inline` when compiled as C++ (the
++// `__STDC_VERSION__` check is false in C++, which corrupts <limits> etc.).
++# if !defined(__cplusplus) && !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
+   #define static
+   #define inline
+ #endif
+@@ -284,7 +286,8 @@
+                               0x1000000000000,0x2000000000000,0x4000000000000,0x8000000000000,
+                               0x10000000000000,0x20000000000000,0x40000000000000,0x80000000000000,
+                               0x100000000000000,0x200000000000000,0x400000000000000,0x800000000000000,
+-                              0x1000000000000000,0x2000000000000000,0x4000000000000000,0x8000000000000000};
++                              0x1000000000000000,0x2000000000000000,0x4000000000000000,
++                              (int64)0x8000000000000000ULL};  // VidE: avoid C++ narrowing
+ 
+ static inline int64 i64_power2(int x)
+ {
+@@ -403,7 +406,7 @@
+   return (mb_type==SI4MB || mb_type==I4MB || mb_type==I16MB || mb_type==I8MB || mb_type==IPCM);
+ }
+ 
+-# if !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
++# if !defined(__cplusplus) && !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
+   #undef static
+   #undef inline
+ #endif
+--- external/JM/source/lib/lcommon/win32.h
++++ external/JM/source/lib/lcommon/win32.h
+@@ -30,7 +30,10 @@
+ # include <sys/types.h>
+ # include <sys/stat.h>
+ # include <windows.h>
+-#if (_MSC_VER < 1400)
++#if defined(__GNUC__)
++// VidE patch: GCC/MinGW already provides intptr_t via <crtdefs.h>/<stdint.h>.
++# include <crtdefs.h>
++#elif (_MSC_VER < 1400)
+ typedef int   intptr_t;
+ #else
+ # include <crtdefs.h>

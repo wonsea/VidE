@@ -50,7 +50,7 @@ set( CMAKE_POSITION_INDEPENDENT_CODE TRUE )
 set_property( GLOBAL PROPERTY USE_FOLDERS ON )
 
 # Include a utility module providing functions, macros, and settings
-include( ${CMAKE_SOURCE_DIR}/cmake/CMakeBuild/cmake/modules/BBuildEnv.cmake )
+include( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CMakeBuild/cmake/modules/BBuildEnv.cmake )
 
 # Enable multithreading
 bb_multithreading()
@@ -68,7 +68,7 @@ endif()
 # bb_enable_warnings( gcc -Wno-unused-variable )
 # bb_enable_warnings( gcc-4.8 warnings-as-errors -Wno-unused-variable )
 # for gcc 8.2:
-bb_enable_warnings( gcc warnings-as-errors -Wno-sign-compare -Wno-class-memaccess)
+bb_enable_warnings( gcc -Wno-sign-compare -Wno-class-memaccess)
 
 if( XCODE )
   bb_enable_warnings( clang warnings-as-errors

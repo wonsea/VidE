@@ -47,6 +47,8 @@ typedef struct {
   vpx_decrypt_cb decrypt_cb;
   void *decrypt_state;
   uint8_t clear_buffer[sizeof(BD_VALUE) + 1];
+  unsigned int bins;  // VidE: number of binary symbols decoded so far
+  const uint8_t *buffer_start;  // VidE: start pointer, for vpx_reader_tell()
 } vpx_reader;
 
 int vpx_reader_init(vpx_reader *r, const uint8_t *buffer, size_t size,
@@ -132,11 +134,22 @@ static INLINE int vpx_read(vpx_reader *r, int prob) {
   }
 #endif
 
+  ++r->bins;  // VidE: count one binary symbol for per-block bit accounting
   return bit;
 }
 
 static INLINE int vpx_read_bit(vpx_reader *r) {
   return vpx_read(r, 128);  // vpx_prob_half
+}
+
+// VidE: cumulative binary-symbol count (monotonic within a reader).
+static INLINE unsigned int vpx_reader_bins(const vpx_reader *r) {
+  return r->bins;
+}
+
+// VidE: approximate consumed bit position within the reader's buffer (monotonic).
+static INLINE int vpx_reader_tell(const vpx_reader *r) {
+  return (int)((r->buffer - r->buffer_start) * 8) - r->count;
 }
 
 static INLINE int vpx_read_literal(vpx_reader *r, int bits) {

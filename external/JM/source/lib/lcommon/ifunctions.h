@@ -17,7 +17,9 @@
 #ifndef _IFUNCTIONS_H_
 #define _IFUNCTIONS_H_
 
-# if !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
+// VidE patch: never blank out `static`/`inline` when compiled as C++ (the
+// `__STDC_VERSION__` check is false in C++, which corrupts <limits> etc.).
+# if !defined(__cplusplus) && !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
   #define static
   #define inline
 #endif
@@ -284,7 +286,8 @@ static const int64 po2[64] = {0x1,0x2,0x4,0x8,0x10,0x20,0x40,0x80,0x100,0x200,0x
                               0x1000000000000,0x2000000000000,0x4000000000000,0x8000000000000,
                               0x10000000000000,0x20000000000000,0x40000000000000,0x80000000000000,
                               0x100000000000000,0x200000000000000,0x400000000000000,0x800000000000000,
-                              0x1000000000000000,0x2000000000000000,0x4000000000000000,0x8000000000000000};
+                              0x1000000000000000,0x2000000000000000,0x4000000000000000,
+                              (int64)0x8000000000000000ULL};  // VidE: avoid C++ narrowing
 
 static inline int64 i64_power2(int x)
 {
@@ -403,7 +406,7 @@ static inline int is_intra_mb(short mb_type)
   return (mb_type==SI4MB || mb_type==I4MB || mb_type==I16MB || mb_type==I8MB || mb_type==IPCM);
 }
 
-# if !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
+# if !defined(__cplusplus) && !(defined(WIN32) || defined(WIN64)) && (__STDC_VERSION__ < 199901L)
   #undef static
   #undef inline
 #endif

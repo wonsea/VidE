@@ -11,6 +11,8 @@
 #ifndef SEI_H
 #define SEI_H
 
+#define JVET_AK0107_MODALITY_INFORMATION 1
+
 typedef enum {
   SEI_BUFFERING_PERIOD = 0,
   SEI_PIC_TIMING,
@@ -59,6 +61,9 @@ typedef enum {
   SEI_BASE_VIEW_TEMPORAL_HRD,
   SEI_FRAME_PACKING_ARRANGEMENT,
   SEI_GREEN_METADATA=56,
+#if JVET_AK0107_MODALITY_INFORMATION
+  SEI_MODALITY_INFO = 218,
+#endif
 
   SEI_MAX_ELEMENTS  //!< number of maximum syntax elements
 } SEI_type;
@@ -125,6 +130,22 @@ typedef struct
   unsigned short xsd_metric_value;
 } Green_metadata_information_struct;
 
+#if JVET_AK0107_MODALITY_INFORMATION
+ //! Modality Infomation
+ typedef struct
+ {
+   Boolean modality_info_cancel_flag;
+   Boolean modality_info_persistence_flag;
+   int modality_type;
+   Boolean spectrum_range_present_flag;
+   int min_wavelength_mantissa; 
+   int min_wavelength_exponent_plus15; 
+   int max_wavelength_mantissa;
+   int max_wavelength_exponent_plus15; 
+   int modality_type_extension_bits; 
+ } modality_information_struct;
+#endif
+
 
 void InterpretSEIMessage                                ( byte* payload, int size, VideoParameters *p_Vid, Slice *pSlice );
 void interpret_spare_pic                                ( byte* payload, int size, VideoParameters *p_Vid );
@@ -154,7 +175,9 @@ void interpret_post_filter_hints_info                   ( byte* payload, int siz
 void interpret_tone_mapping                             ( byte* payload, int size, VideoParameters *p_Vid );
 void interpret_frame_packing_arrangement_info           ( byte* payload, int size, VideoParameters *p_Vid );
 void interpret_green_metadata_info                       (byte* payload, int size, VideoParameters *p_Vid );
-
+#if JVET_AK0107_MODALITY_INFORMATION
+void interpret_modality_info                            ( byte* payload, int size, VideoParameters *p_Vid );
+#endif
 #if (ENABLE_OUTPUT_TONEMAPPING)
 void tone_map               (imgpel** imgX, imgpel* lut, int size_x, int size_y);
 void init_tone_mapping_sei  (ToneMappingSEI *seiToneMapping);

@@ -110,6 +110,9 @@ public:
 
   virtual Void parseExplicitRdpcmMode ( TComTU &rTu, ComponentID compID ) = 0;
 
+  // VidE: consumed bits in the entropy (CABAC) substream, for per-CU bit ranges.
+  virtual Int getNumBitsRead() { return 0; }
+
   virtual ~TDecEntropyIf() {}
 };
 
@@ -141,6 +144,7 @@ public:
   Void    setEntropyDecoder           ( TDecEntropyIf* p );
   Void    setBitstream                ( TComInputBitstream* p ) { m_pcEntropyDecoderIf->setBitstream(p);                    }
   Void    resetEntropy                ( TComSlice* p)           { m_pcEntropyDecoderIf->resetEntropy(p);                    }
+  Int     getNumBitsRead              () { return m_pcEntropyDecoderIf->getNumBitsRead(); }
 
   Void    decodeVPS                   ( TComVPS* pcVPS ) { m_pcEntropyDecoderIf->parseVPS(pcVPS); }
   Void    decodeSPS                   ( TComSPS* pcSPS ) { m_pcEntropyDecoderIf->parseSPS(pcSPS); }

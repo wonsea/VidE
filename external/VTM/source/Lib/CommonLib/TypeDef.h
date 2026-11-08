@@ -47,6 +47,7 @@
 #include <utility>
 #include <sstream>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <assert.h>
 #include <cassert>

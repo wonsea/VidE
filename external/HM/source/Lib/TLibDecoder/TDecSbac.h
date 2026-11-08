@@ -46,6 +46,7 @@
 
 #include "TDecEntropy.h"
 #include "TDecBinCoder.h"
+#include "TDecBinCoderCABAC.h"  // VidE: getNumBitsRead()
 #include "TLibCommon/ContextTables.h"
 #include "TLibCommon/ContextModel.h"
 #include "TLibCommon/ContextModel3DBuffer.h"
@@ -68,6 +69,7 @@ public:
 
   Void  init                      ( TDecBinIf* p )    { m_pcTDecBinIf = p; }
   Void  uninit                    (              )    { m_pcTDecBinIf = 0; }
+  Int   getNumBitsRead            (              ) override { return m_pcTDecBinIf->getTDecBinCABAC()->getNumBitsRead(); }
 
   Void load                       ( const TDecSbac* pSrc );
   Void loadContexts               ( const TDecSbac* pSrc );

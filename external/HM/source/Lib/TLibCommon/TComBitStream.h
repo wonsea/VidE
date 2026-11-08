@@ -187,10 +187,11 @@ public:
   Void        pseudoRead      ( UInt uiNumberOfBits, UInt& ruiBits );
   Void        read            ( UInt uiNumberOfBits, UInt& ruiBits );
   Void        readByte        ( UInt &ruiBits )
-  {
+    {
     assert(m_fifo_idx < m_fifo.size());
     ruiBits = m_fifo[m_fifo_idx++];
-  }
+    m_numBitsRead += 8;  // VidE: always track consumed bits (bit-range capture)
+    }
 
   Void        peekPreviousByte( UInt &byte )
   {

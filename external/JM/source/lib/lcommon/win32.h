@@ -30,7 +30,10 @@
 # include <sys/types.h>
 # include <sys/stat.h>
 # include <windows.h>
-#if (_MSC_VER < 1400)
+#if defined(__GNUC__)
+// VidE patch: GCC/MinGW already provides intptr_t via <crtdefs.h>/<stdint.h>.
+# include <crtdefs.h>
+#elif (_MSC_VER < 1400)
 typedef int   intptr_t;
 #else
 # include <crtdefs.h>

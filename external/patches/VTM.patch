@@ -1,0 +1,791 @@
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/CMakeLists.txt external/VTM/CMakeLists.txt
+--- external/VTM/CMakeLists.txt	2026-10-15 19:21:54.206276000 +0800
++++ external/VTM/CMakeLists.txt	2026-09-23 06:58:44.111075500 +0800
+@@ -55,14 +55,14 @@
+ set_property( GLOBAL PROPERTY USE_FOLDERS ON )
+ 
+ # Include a utility module providing functions, macros, and settings
+-include( ${CMAKE_SOURCE_DIR}/cmake/CMakeBuild/cmake/modules/BBuildEnv.cmake )
++include( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CMakeBuild/cmake/modules/BBuildEnv.cmake )
+ 
+ # Enable warnings for some generators and toolsets.
+ # bb_enable_warnings( gcc warnings-as-errors -Wno-sign-compare )
+ # bb_enable_warnings( gcc -Wno-unused-variable )
+ # bb_enable_warnings( gcc-4.8 warnings-as-errors -Wno-unused-variable )
+ # for gcc 8.2:
+-bb_enable_warnings( gcc warnings-as-errors -Wno-sign-compare)
++bb_enable_warnings( gcc -Wno-sign-compare)
+ 
+ if( XCODE )
+   bb_enable_warnings( clang warnings-as-errors
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/CommonLib/BitStream.h external/VTM/source/Lib/CommonLib/BitStream.h
+--- external/VTM/source/Lib/CommonLib/BitStream.h	2026-10-15 19:21:54.377569800 +0800
++++ external/VTM/source/Lib/CommonLib/BitStream.h	2026-10-11 17:23:56.750003100 +0800
+@@ -178,9 +178,7 @@
+   {
+     CHECK(m_fifoIdx >= m_fifo.size(), "FIFO exceeded");
+     ruiBits = m_fifo[m_fifoIdx++];
+-#if ENABLE_TRACING
+-    m_numBitsRead += 8;
+-#endif
++    m_numBitsRead += 8;  // VidE: always track consumed bits (bit-range capture)
+   }
+ 
+   void        peekPreviousByte( uint32_t &byte )
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/CommonLib/dtrace.h external/VTM/source/Lib/CommonLib/dtrace.h
+--- external/VTM/source/Lib/CommonLib/dtrace.h	2026-10-15 19:21:54.416467400 +0800
++++ external/VTM/source/Lib/CommonLib/dtrace.h	2026-09-23 07:00:46.721598700 +0800
+@@ -39,6 +39,7 @@
+ #define _DTRACE_H_
+ 
+ #include <stdio.h>
++#include <cstdint>
+ 
+ #include <string>
+ #include <list>
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/CommonLib/TypeDef.h external/VTM/source/Lib/CommonLib/TypeDef.h
+--- external/VTM/source/Lib/CommonLib/TypeDef.h	2026-10-15 19:21:54.412477800 +0800
++++ external/VTM/source/Lib/CommonLib/TypeDef.h	2026-09-23 07:00:12.293171700 +0800
+@@ -47,6 +47,7 @@
+ #include <utility>
+ #include <sstream>
+ #include <cstddef>
++#include <cstdint>
+ #include <cstring>
+ #include <assert.h>
+ #include <cassert>
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/BinDecoder.cpp external/VTM/source/Lib/DecoderLib/BinDecoder.cpp
+--- external/VTM/source/Lib/DecoderLib/BinDecoder.cpp	2026-10-15 19:21:54.432426400 +0800
++++ external/VTM/source/Lib/DecoderLib/BinDecoder.cpp	2026-09-25 08:41:36.696019900 +0800
+@@ -37,6 +37,7 @@
+ 
+ 
+ #include "BinDecoder.h"
++#include "DecoderLib/VideCapture.h"  // VidE: CABAC bin accounting
+ #include "CommonLib/Rom.h"
+ #if RExt__DECODER_DEBUG_BIT_STATISTICS
+ #include "CommonLib/CodingStatistics.h"
+@@ -91,6 +92,7 @@
+ 
+ unsigned BinDecoderBase::decodeBinEP()
+ {
++  vide_vvc::addBins(1);  // VidE: count one bypass bin
+   m_value += m_value;
+   if( ++m_bitsNeeded >= 0 )
+   {
+@@ -114,6 +116,7 @@
+ 
+ unsigned BinDecoderBase::decodeBinsEP( unsigned numBins )
+ {
++  vide_vvc::addBins(numBins);  // VidE: count bypass bins
+ #if ENABLE_TRACING
+   int numBinsOrig = numBins;
+ #endif
+@@ -202,6 +205,7 @@
+ 
+ unsigned BinDecoderBase::decodeBinTrm()
+ {
++  vide_vvc::addBins(1);  // VidE: count termination bin
+   m_range -= 2;
+   unsigned scaledRange = m_range << 7;
+   if (m_value >= scaledRange)
+@@ -241,6 +245,7 @@
+ 
+ unsigned BinDecoderBase::decodeAlignedBinsEP( unsigned numBins )
+ {
++  vide_vvc::addBins(numBins);  // VidE: count aligned bypass bins
+ #if ENABLE_TRACING
+   int numBinsOrig = numBins;
+ #endif
+@@ -291,6 +296,7 @@
+ template <class BinProbModel>
+ unsigned TBinDecoder<BinProbModel>::decodeBin( unsigned ctxId )
+ {
++  vide_vvc::addBins(1);  // VidE: count one context-coded bin
+   BinProbModel &probModel = m_ctx[ctxId];
+   unsigned      bin       = probModel.mps();
+   uint32_t      lpsRange  = probModel.getLPS(m_range);
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/CABACReader.cpp external/VTM/source/Lib/DecoderLib/CABACReader.cpp
+--- external/VTM/source/Lib/DecoderLib/CABACReader.cpp	2026-10-15 19:21:54.433423700 +0800
++++ external/VTM/source/Lib/DecoderLib/CABACReader.cpp	2026-10-11 17:25:35.073674200 +0800
+@@ -37,6 +37,7 @@
+ 
+ #include "CABACReader.h"
+ 
++#include "DecoderLib/VideCapture.h"  // VidE: per-CU CABAC bit accounting
+ #include "CommonLib/CodingStructure.h"
+ #include "CommonLib/TrQuant.h"
+ #include "CommonLib/UnitTools.h"
+@@ -509,6 +510,13 @@
+   const PPS      &pps         = *cs.pps;
+   const UnitArea &currArea    = partitioner.currArea();
+ 
++  // VidE: record the real CU partition tree from the decoder recursion (luma
++  // tree only; chroma-tree calls push nothing).
++  vide_vvc::CodingNodeScope videNodeScope(
++      &cs, currArea.lumaPos().x, currArea.lumaPos().y,
++      static_cast<int>(currArea.lwidth()), static_cast<int>(currArea.lheight()),
++      partitioner.chType == ChannelType::LUMA);
++
+   // Reset delta QP coding flag and ChromaQPAdjustemt coding flag
+   //Note: do not reset qg at chroma CU
+   if( pps.getUseDQP() && partitioner.currQgEnable() && !isChroma(partitioner.chType) )
+@@ -698,6 +706,10 @@
+   // coding unit
+ 
+   coding_unit( cu, partitioner, cuCtx );
++  if (cu.chType == ChannelType::LUMA)
++  {
++    vide_vvc::attachCodingNode(&cs, &cu);  // VidE: attach real CU syntax to its node
++  }
+   //recover cuCtx.qp to luma qp after decoding the chroma CU
+   if( pps.getUseDQP() && partitioner.isSepTree( cs ) && isChroma( cu.chType ) )
+   {
+@@ -873,6 +885,7 @@
+ 
+ void CABACReader::coding_unit( CodingUnit &cu, Partitioner &partitioner, CUCtx& cuCtx )
+ {
++  vide_vvc::markCuStart( &cu, get_num_bits_read() );  // VidE: begin per-CU bin/bit accounting
+   CodingStructure& cs = *cu.cs;
+   CHECK( cu.treeType != partitioner.treeType || cu.modeType != partitioner.modeType, "treeType or modeType mismatch" );
+   DTRACE( g_trace_ctx, D_SYNTAX, "coding_unit() treeType=%d modeType=%d\n", cu.treeType, cu.modeType );
+@@ -891,6 +904,7 @@
+     MergeCtx           mrgCtx;
+     prediction_unit  ( pu, mrgCtx );
+     end_of_ctu( cu, cuCtx );
++    vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: skip-path CU bits
+     return;
+   }
+ 
+@@ -927,6 +941,7 @@
+       }
+     }
+     end_of_ctu(cu, cuCtx);
++    vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: palette-path CU bits
+     return;
+   }
+ 
+@@ -940,6 +955,8 @@
+ 
+   // check end of cu
+   end_of_ctu( cu, cuCtx );
++
++  vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: record this CU's bin/bit range
+ }
+ 
+ void CABACReader::cu_skip_flag( CodingUnit& cu )
+@@ -1804,6 +1821,7 @@
+   {
+     if (!cu.isSepTree() || isLuma(tu.chType))
+     {
++      vide_vvc::recordCuQpCoded(&cu);  // VidE: this CU codes an explicit cu_qp_delta
+       cu_qp_delta(cu, cuCtx.qp, cu.qp);
+       cuCtx.qp = cu.qp;
+       cuCtx.isDQPCoded = true;
+@@ -2820,6 +2838,7 @@
+   {
+     if( cu.cs->pps->getUseDQP() && !cuCtx.isDQPCoded )
+     {
++      vide_vvc::recordCuQpCoded(&cu);  // VidE: this CU codes an explicit cu_qp_delta
+       cu_qp_delta(cu, cuCtx.qp, cu.qp);
+       cuCtx.qp = cu.qp;
+       cuCtx.isDQPCoded = true;
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/CABACReader.h external/VTM/source/Lib/DecoderLib/CABACReader.h
+--- external/VTM/source/Lib/DecoderLib/CABACReader.h	2026-10-15 19:21:54.434420300 +0800
++++ external/VTM/source/Lib/DecoderLib/CABACReader.h	2026-10-12 21:18:12.464062200 +0800
+@@ -43,6 +43,7 @@
+ #include "CommonLib/ContextModelling.h"
+ #include "CommonLib/MotionInfo.h"
+ #include "CommonLib/UnitPartitioner.h"
++#include "VideCapture.h"  // VidE: active-substream tracking
+ 
+ 
+ class CABACReader
+@@ -56,6 +57,7 @@
+   void        initBitstream(InputBitstream *bitstream)
+   {
+     m_bitstream = bitstream;
++    vide_vvc::setActiveSubstream( bitstream );  // VidE: track substream base
+     m_binDecoder.init(m_bitstream);
+   }
+   const Ctx &getCtx() const { return m_binDecoder.getCtx(); }
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/DecLib.cpp external/VTM/source/Lib/DecoderLib/DecLib.cpp
+--- external/VTM/source/Lib/DecoderLib/DecLib.cpp	2026-10-15 19:21:54.436415000 +0800
++++ external/VTM/source/Lib/DecoderLib/DecLib.cpp	2026-09-25 08:06:00.930618500 +0800
+@@ -37,6 +37,7 @@
+ 
+ #include "NALread.h"
+ #include "DecLib.h"
++#include "DecoderLib/VideCapture.h"  // VidE: prediction/residual capture hook
+ 
+ #include "CommonLib/dtrace_next.h"
+ #include "CommonLib/dtrace_buffer.h"
+@@ -962,6 +963,7 @@
+   m_maxDecSubPicIdx = 0;
+   m_maxDecSliceAddrInSubPic = -1;
+ 
++  vide_vvc::capturePicture( m_pcPic );  // VidE: capture prediction/residual
+   m_pcPic->destroyTempBuffers();
+   m_pcPic->cs->destroyCoeffs();
+   m_pcPic->cs->releaseIntermediateData();
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/DecSlice.cpp external/VTM/source/Lib/DecoderLib/DecSlice.cpp
+--- external/VTM/source/Lib/DecoderLib/DecSlice.cpp	2026-10-15 19:21:54.437413200 +0800
++++ external/VTM/source/Lib/DecoderLib/DecSlice.cpp	2026-10-12 21:17:16.900963100 +0800
+@@ -38,6 +38,7 @@
+ #include "DecSlice.h"
+ #include "CommonLib/UnitTools.h"
+ #include "CommonLib/dtrace_next.h"
++#include "VideCapture.h"  // VidE: slice-data-start bit capture
+ 
+ #include <vector>
+ 
+@@ -77,6 +78,7 @@
+ 
+   const SPS*     sps          = slice->getSPS();
+   Picture*       pic          = slice->getPic();
++  vide_vvc::recordSliceDataStart( pic, bitstream->getNumBitsRead() );  // VidE: slice-data start bit
+   CABACReader   &cabacReader  = *m_CABACDecoder->getCABACReader(BpmType::STD);
+ 
+   // setup coding structure
+@@ -106,9 +108,13 @@
+   // init each couple {EntropyDecoder, Substream}
+   // Table of extracted substreams.
+   std::vector<InputBitstream*> ppcSubstreams( numSubstreams );
++  unsigned substreamBase = bitstream->getNumBitsRead();  // VidE: cumulative base in NAL RBSP
+   for( unsigned idx = 0; idx < numSubstreams; idx++ )
+   {
+-    ppcSubstreams[idx] = bitstream->extractSubstream( idx+1 < numSubstreams ? ( slice->getSubstreamSize(idx) << 3 ) : bitstream->getNumBitsLeft() );
++    const unsigned substreamBits = idx+1 < numSubstreams ? ( slice->getSubstreamSize(idx) << 3 ) : bitstream->getNumBitsLeft();
++    ppcSubstreams[idx] = bitstream->extractSubstream( substreamBits );
++    vide_vvc::recordSubstreamBase( ppcSubstreams[idx], substreamBase );  // VidE
++    substreamBase += substreamBits;
+   }
+ 
+   const unsigned  widthInCtus             = cs.pcv->widthInCtus;
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/VideCapture.cpp external/VTM/source/Lib/DecoderLib/VideCapture.cpp
+--- external/VTM/source/Lib/DecoderLib/VideCapture.cpp	1970-01-01 08:00:00.000000000 +0800
++++ external/VTM/source/Lib/DecoderLib/VideCapture.cpp	2026-10-12 21:17:06.701700700 +0800
+@@ -0,0 +1,367 @@
++#include "DecoderLib/VideCapture.h"
++
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <deque>
++#include <map>
++
++#include "CommonLib/ChromaFormat.h"
++#include "CommonLib/Picture.h"
++#include "CommonLib/Slice.h"
++#include "CommonLib/Unit.h"
++
++namespace vide_vvc {
++namespace {
++
++std::deque<FrameCapture>& queue() {
++    static std::deque<FrameCapture> q;
++    return q;
++}
++
++unsigned& binCounter() {
++    static unsigned counter = 0;
++    return counter;
++}
++std::map<const CodingUnit*, unsigned>& cuStartMap() {
++    static std::map<const CodingUnit*, unsigned> m;
++    return m;
++}
++std::map<const CodingUnit*, unsigned>& cuBitsMap() {
++    static std::map<const CodingUnit*, unsigned> m;
++    return m;
++}
++std::map<const CodingUnit*, unsigned>& cuStartBitMap() {
++    static std::map<const CodingUnit*, unsigned> m;
++    return m;
++}
++std::map<const CodingUnit*, unsigned>& cuBitLengthMap() {
++    static std::map<const CodingUnit*, unsigned> m;
++    return m;
++}
++std::map<const CodingUnit*, bool>& cuQpCodedMap() {
++    static std::map<const CodingUnit*, bool> m;
++    return m;
++}
++std::map<const Picture*, unsigned>& sliceDataBitMap() {
++    static std::map<const Picture*, unsigned> m;
++    return m;
++}
++std::map<const void*, unsigned>& substreamBaseMap() {
++    static std::map<const void*, unsigned> m;
++    return m;
++}
++const void*& activeSubstream() {
++    static const void* p = nullptr;
++    return p;
++}
++unsigned activeSubstreamBase() {
++    auto it = substreamBaseMap().find(activeSubstream());
++    return it != substreamBaseMap().end() ? it->second : 0;
++}
++
++void copyPlane(std::vector<Pel>& dst, int width, int height, const CPelBuf& src) {
++    dst.assign(static_cast<std::size_t>(width) * height, 0);
++    if (src.buf == nullptr || src.width <= 0 || src.height <= 0) {
++        return;
++    }
++    const int w = std::min(width, static_cast<int>(src.width));
++    const int h = std::min(height, static_cast<int>(src.height));
++    const int pitch = src.stride > 0 ? static_cast<int>(src.stride) : src.width;
++    const int xmax = std::min(w, pitch);
++    for (int y = 0; y < h; ++y) {
++        std::memcpy(dst.data() + static_cast<std::size_t>(y) * width,
++                    src.buf + static_cast<std::ptrdiff_t>(y) * pitch,
++                    static_cast<std::size_t>(xmax) * sizeof(Pel));
++    }
++}
++
++int predModeToInt(PredMode mode, bool skip) {
++    if (skip) {
++        return 2;
++    }
++    switch (mode) {
++        case MODE_INTRA: return 0;
++        case MODE_INTER: return 1;
++        default: return 3;
++    }
++}
++
++}  // namespace
++
++namespace {
++
++std::map<const void*, std::vector<CodingNode>>& nodeMap() {
++    static std::map<const void*, std::vector<CodingNode>> m;
++    return m;
++}
++std::map<const void*, std::vector<int>>& nodeStack() {
++    static std::map<const void*, std::vector<int>> m;
++    return m;
++}
++
++}  // namespace
++
++CodingNodeScope::CodingNodeScope(const void* cs, int x, int y, int w, int h, bool active)
++    : cs_(cs), active_(active) {
++    if (!active_) {
++        return;
++    }
++    std::vector<CodingNode>& nodes = nodeMap()[cs];
++    std::vector<int>& stack = nodeStack()[cs];
++    CodingNode node;
++    node.parent = stack.empty() ? -1 : stack.back();
++    node.x = x;
++    node.y = y;
++    node.w = w;
++    node.h = h;
++    node.depth = static_cast<int>(stack.size());
++    nodes.push_back(node);
++    stack.push_back(static_cast<int>(nodes.size()) - 1);
++}
++
++CodingNodeScope::~CodingNodeScope() {
++    if (!active_) {
++        return;
++    }
++    std::vector<int>& stack = nodeStack()[cs_];
++    if (!stack.empty()) {
++        stack.pop_back();
++    }
++}
++
++void attachCodingNode(const void* cs, const void* cu_ptr) {    auto it = nodeMap().find(cs);
++    if (it == nodeMap().end() || it->second.empty()) {
++        return;
++    }
++    const CodingUnit* cu = static_cast<const CodingUnit*>(cu_ptr);
++    CodingNode& node = it->second.back();
++    node.leaf = 1;
++    node.pred_mode = (cu->predMode == MODE_INTRA) ? 0 : 1;
++    node.qp = cu->qp;
++    auto qpIt = cuQpCodedMap().find(cu);
++    node.qp_coded = (qpIt != cuQpCodedMap().end() && qpIt->second) ? 1 : 0;
++    node.skip = cu->skip ? 1 : 0;
++    if (cu->firstPU != nullptr) {
++        node.intra_dir = static_cast<int>(cu->firstPU->intraDir[ChannelType::LUMA]);
++        node.inter_dir = cu->firstPU->interDir;
++        node.merge_flag = cu->firstPU->mergeFlag ? 1 : 0;
++        node.merge_idx = cu->firstPU->mergeIdx;
++    }
++    auto bitsIt = cuBitsMap().find(cu);
++    if (bitsIt != cuBitsMap().end()) {
++        node.bits = bitsIt->second;
++    }
++    auto startBitIt = cuStartBitMap().find(cu);
++    auto lenIt = cuBitLengthMap().find(cu);
++    if (startBitIt != cuStartBitMap().end() && lenIt != cuBitLengthMap().end()) {
++        node.bit_offset = startBitIt->second;
++        node.bit_length = lenIt->second;
++    }
++}
++
++void recordCuQpCoded(const void* cu_ptr) {
++    const CodingUnit* cu = static_cast<const CodingUnit*>(cu_ptr);
++    cuQpCodedMap()[cu] = true;
++}
++
++void recordSliceDataStart(const ::Picture* pic, unsigned bitPos) {
++    if (pic == nullptr) {
++        return;
++    }
++    // Keep the first slice's value (picture-level mapping).
++    sliceDataBitMap().emplace(pic, bitPos);
++}
++
++void recordSubstreamBase(const void* substream, unsigned base) {
++    if (substream != nullptr) {
++        substreamBaseMap()[substream] = base;
++    }
++}
++
++void setActiveSubstream(const void* substream) {
++    activeSubstream() = substream;
++}
++
++void capturePicture(::Picture* pic) {
++    if (pic == nullptr || pic->cs == nullptr) {
++        return;
++    }
++    const UnitArea area = pic->cs->area;
++    const int width = static_cast<int>(area.lwidth());
++    const int height = static_cast<int>(area.lheight());
++    if (width <= 0 || height <= 0) {
++        return;
++    }
++    const ChromaFormat fmt = area.chromaFormat;
++    const int cw = (fmt == CHROMA_400) ? 0 : (width >> ::getComponentScaleX(COMPONENT_Cb, fmt));
++    const int ch = (fmt == CHROMA_400) ? 0 : (height >> ::getComponentScaleY(COMPONENT_Cb, fmt));
++
++    FrameCapture fc;
++    fc.poc = pic->getPOC();
++    fc.width = width;
++    fc.height = height;
++    fc.bit_depth = pic->cs->sps != nullptr ? pic->cs->sps->getBitDepth(ChannelType::LUMA) : 8;
++    fc.is_keyframe = pic->slices.empty() ? false
++                                         : (pic->slices.front() != nullptr &&
++                                            pic->slices.front()->isIRAP());
++    // Reference POCs (from the first slice), for the frame-level DPB view.
++    if (!pic->slices.empty() && pic->slices.front() != nullptr) {
++        const Slice* sl = pic->slices.front();
++        for (int i = 0; i < sl->getNumRefIdx(REF_PIC_LIST_0); ++i) {
++            fc.ref_l0_poc.push_back(sl->getRefPOC(REF_PIC_LIST_0, i));
++        }
++        for (int i = 0; i < sl->getNumRefIdx(REF_PIC_LIST_1); ++i) {
++            fc.ref_l1_poc.push_back(sl->getRefPOC(REF_PIC_LIST_1, i));
++        }
++        fc.slice_type = static_cast<int>(sl->getSliceType());
++        fc.slice_qp = sl->getSliceQp();
++        fc.slice_qp_delta = sl->getSliceQpDelta();
++        fc.poc_lsb = pic->getPOC();
++        fc.temporal_id = static_cast<int>(sl->getTLayer());
++        fc.is_irap = sl->isIRAP();
++        fc.num_ref_l0 = sl->getNumRefIdx(REF_PIC_LIST_0);
++        fc.num_ref_l1 = sl->getNumRefIdx(REF_PIC_LIST_1);
++    }
++    {
++        auto sdIt = sliceDataBitMap().find(pic);
++        if (sdIt != sliceDataBitMap().end()) {
++            fc.slice_data_bit = sdIt->second;
++        }
++    }
++
++    // Prediction / residual: read the CodingStructure's bound buffers (these
++    // are rebound per picture) rather than Picture::getPredBuf(area), which
++    // can hand back an unbound buffer for recycled pictures.
++    const CPelUnitBuf pred = pic->cs->getPredBuf();
++    const CPelUnitBuf resi = pic->cs->getResiBuf();
++    if (pred.get(COMPONENT_Y).buf != nullptr) {
++        copyPlane(fc.pred_y, width, height, pred.get(COMPONENT_Y));
++        if (cw > 0) {
++            copyPlane(fc.pred_u, cw, ch, pred.get(COMPONENT_Cb));
++            copyPlane(fc.pred_v, cw, ch, pred.get(COMPONENT_Cr));
++        }
++        fc.has_pred = true;
++    }
++    if (resi.get(COMPONENT_Y).buf != nullptr) {
++        copyPlane(fc.resi_y, width, height, resi.get(COMPONENT_Y));
++        if (cw > 0) {
++            copyPlane(fc.resi_u, cw, ch, resi.get(COMPONENT_Cb));
++            copyPlane(fc.resi_v, cw, ch, resi.get(COMPONENT_Cr));
++        }
++        fc.has_resi = true;
++    }
++
++    // Reconstruction.
++    const CPelUnitBuf reco = pic->getRecoBuf();
++    copyPlane(fc.reco_y, width, height, reco.get(COMPONENT_Y));
++    if (cw > 0) {
++        copyPlane(fc.reco_u, cw, ch, reco.get(COMPONENT_Cb));
++        copyPlane(fc.reco_v, cw, ch, reco.get(COMPONENT_Cr));
++    }
++
++    // Coding units.
++    if (pic->cs->cus.capacity() > 0) {
++        for (const CodingUnit* cu : pic->cs->cus) {
++            if (cu == nullptr) {
++                continue;
++            }
++            // Luma CUs only: dual-tree chroma CUs share luma positions and would
++            // duplicate/overlap the block grid (and have no matching luma node).
++            if (cu->chType != ChannelType::LUMA) {
++                continue;
++            }
++            const Area& luma = cu->Y();
++            CuInfo info;
++            info.x = static_cast<int>(luma.x);
++            info.y = static_cast<int>(luma.y);
++            info.w = static_cast<int>(luma.width);
++            info.h = static_cast<int>(luma.height);
++            info.depth = cu->depth;
++            info.qp = cu->qp;
++            {
++                auto qpIt = cuQpCodedMap().find(cu);
++                info.qp_coded = (qpIt != cuQpCodedMap().end() && qpIt->second) ? 1 : 0;
++            }
++            info.pred_mode = predModeToInt(cu->predMode, cu->skip);
++            auto bitsIt = cuBitsMap().find(cu);
++            info.bits = bitsIt != cuBitsMap().end() ? bitsIt->second : 0;
++            auto startBitIt = cuStartBitMap().find(cu);
++            auto lenIt = cuBitLengthMap().find(cu);
++            if (startBitIt != cuStartBitMap().end() && lenIt != cuBitLengthMap().end()) {
++                info.bit_offset = startBitIt->second;
++                info.bit_length = lenIt->second;
++            }
++            if (cu->firstPU != nullptr) {
++                for (int list = 0; list < 2; ++list) {
++                    const RefPicList e = (list == 0) ? REF_PIC_LIST_0 : REF_PIC_LIST_1;
++                    const int mvx = cu->firstPU->mv[e].getHor() >> 2;  // 1/16 -> 1/4 pel
++                    const int mvy = cu->firstPU->mv[e].getVer() >> 2;
++                    const int ref = cu->firstPU->refIdx[e];
++                    if (list == 0) {
++                        info.mv0x = mvx;
++                        info.mv0y = mvy;
++                        info.ref0 = ref;
++                    } else {
++                        info.mv1x = mvx;
++                        info.mv1y = mvy;
++                        info.ref1 = ref;
++                    }
++                }
++            }
++            fc.cus.push_back(info);
++        }
++    }
++
++    // Real CU partition tree recorded during CABACReader::coding_tree.
++    auto nodeIt = nodeMap().find(pic->cs);
++    if (nodeIt != nodeMap().end()) {
++        fc.nodes = std::move(nodeIt->second);
++        nodeMap().erase(nodeIt);
++        nodeStack().erase(pic->cs);
++    }
++
++    // CUs are recycled from a pool across pictures: drop the per-CU QP map so a
++    // reused CU pointer never carries a stale "coded" flag.
++    cuQpCodedMap().clear();
++    sliceDataBitMap().clear();
++    substreamBaseMap().clear();
++    activeSubstream() = nullptr;
++
++    queue().push_back(std::move(fc));
++}
++
++bool popCapture(FrameCapture& out) {
++    if (queue().empty()) {
++        return false;
++    }
++    out = std::move(queue().front());
++    queue().pop_front();
++    return true;
++}
++
++// ---- CABAC bin accounting --------------------------------------------------
++
++void addBins(unsigned count) { binCounter() += count; }
++unsigned binCount() { return binCounter(); }
++
++void markCuStart(const CodingUnit* cu, unsigned bitPos) {
++    cuStartMap()[cu] = binCounter();
++    cuStartBitMap()[cu] = bitPos + activeSubstreamBase();
++}
++
++void recordCuBits(const CodingUnit* cu, unsigned bitPos) {
++    auto it = cuStartMap().find(cu);
++    if (it != cuStartMap().end()) {
++        cuBitsMap()[cu] = binCounter() - it->second;
++        cuStartMap().erase(it);
++    }
++    const unsigned abs = bitPos + activeSubstreamBase();
++    auto bitIt = cuStartBitMap().find(cu);
++    if (bitIt != cuStartBitMap().end()) {
++        cuBitLengthMap()[cu] = abs >= bitIt->second ? abs - bitIt->second : 0;
++    }
++}
++
++}  // namespace vide_vvc
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/DecoderLib/VideCapture.h external/VTM/source/Lib/DecoderLib/VideCapture.h
+--- external/VTM/source/Lib/DecoderLib/VideCapture.h	1970-01-01 08:00:00.000000000 +0800
++++ external/VTM/source/Lib/DecoderLib/VideCapture.h	2026-10-13 23:40:00.673108700 +0800
+@@ -0,0 +1,141 @@
++// VidE capture hook for the VVC reference decoder (VTM).
++//
++// DecLib::finishPicture tears down per-picture coding structures (temp buffers,
++// coeffs, intermediate data) right after a picture is reconstructed. Reading
++// those structures from the helper afterwards races with VTM's DPB recycling and
++// crashes. This hook runs inside finishPicture (before teardown) and copies
++// everything VidE needs into a global FIFO of self-contained frame captures.
++//
++// The helper drains the FIFO after each decode iteration. Captures are keyed by
++// a monotonically increasing sequence number, never by Picture*.
++//
++// Bit-range convention (v0.36+): per-CU bit ranges are snapshotted from the
++// CABAC reader at CU entry/exit and exposed as `bit_offset`/`bit_length`
++// relative to the slice NAL RBSP (substream bases folded in). See
++// external/patches/README.md.
++#pragma once
++
++#include <cstdint>
++#include <vector>
++
++#include "CommonLib/CommonDef.h"
++
++class Picture;
++class CodingUnit;
++
++namespace vide_vvc {
++
++// A single reconstructed coding unit (picture coordinates).
++struct CuInfo {
++    int x = 0;
++    int y = 0;
++    int w = 0;
++    int h = 0;
++    int depth = 0;
++    int qp = 0;
++    int qp_coded = 0;    // 1 when this CU explicitly coded cu_qp_delta
++    int pred_mode = 0;   // 0 intra, 1 inter, 2 skip, 3 unknown
++    int mv0x = 0, mv0y = 0, mv1x = 0, mv1y = 0;
++    int ref0 = -1, ref1 = -1;
++    uint32_t bits = 0;
++    // Coded bit range within the slice-data substream (0/0 = unknown).
++    uint32_t bit_offset = 0;
++    uint32_t bit_length = 0;
++};
++
++// A node of the real CU partition tree, captured while CABACReader::coding_tree
++// descends (so parent/child links come straight from the decoder recursion,
++// not from post-hoc geometry). `parent` indexes FrameCapture::nodes (-1 at a
++// CTU root); leaf nodes carry the decoded CU fields.
++struct CodingNode {
++    int parent = -1;
++    int x = 0, y = 0, w = 0, h = 0;
++    int depth = 0;
++    int leaf = 0;
++    int pred_mode = 0;   // 0 intra, 1 inter
++    int qp = 0;
++    int qp_coded = 0;
++    int skip = 0;
++    int intra_dir = -1;
++    int inter_dir = 0;
++    int merge_flag = 0;
++    int merge_idx = 0;
++    uint32_t bits = 0;
++    uint32_t bit_offset = 0;
++    uint32_t bit_length = 0;
++};
++
++// A captured picture (all planes tightly packed, luma resolution).
++struct FrameCapture {
++    int poc = 0;
++    int width = 0;
++    int height = 0;
++    int bit_depth = 8;
++    bool is_keyframe = false;
++    bool has_pred = false;
++    bool has_resi = false;
++
++    std::vector<Pel> pred_y, pred_u, pred_v;
++    std::vector<Pel> resi_y, resi_u, resi_v;
++    std::vector<Pel> reco_y, reco_u, reco_v;
++    std::vector<CuInfo> cus;
++    std::vector<CodingNode> nodes;
++    // Reference POCs per list (from the first slice of the picture).
++    std::vector<int> ref_l0_poc;
++    std::vector<int> ref_l1_poc;
++    // First slice / picture header fields.
++    int slice_type = 0;
++    int slice_qp = 0;
++    int slice_qp_delta = 0;
++    int poc_lsb = 0;
++    int temporal_id = 0;
++    bool is_irap = false;
++    int num_ref_l0 = 0;
++    int num_ref_l1 = 0;
++    // Bit offset of the slice-data substream start within the slice NAL RBSP
++    // (i.e. slice_header + alignment length). Maps per-CU bit ranges to the NAL.
++    uint32_t slice_data_bit = 0;
++};
++
++// Called from DecLib::finishPicture; copies the picture and queues a capture.
++void capturePicture(::Picture* pic);
++
++// Pops the oldest queued capture into `out`. Returns false when empty.
++bool popCapture(FrameCapture& out);
++
++// ---- Real CU partition-tree recording (called from CABACReader::coding_tree) --
++// `cs`/`cu` are opaque CodingStructure*/CodingUnit*. `active` is false for
++// chroma-tree calls, which push nothing.
++struct CodingNodeScope {
++    CodingNodeScope(const void* cs, int x, int y, int w, int h, bool active);
++    ~CodingNodeScope();
++    const void* cs_ = nullptr;
++    bool active_ = false;
++};
++void attachCodingNode(const void* cs, const void* cu);
++
++// Records that a CU explicitly coded cu_qp_delta. Called from CABACReader right
++// at the cu_qp_delta() call (before cuCtx.isDQPCoded is set true). `cu` is a
++// CodingUnit* passed as void* to keep VTM headers out of this interface.
++void recordCuQpCoded(const void* cu);
++
++// ---- CABAC bin accounting (per-CU bit counts) ------------------------------
++// BinDecoderBase calls addBins() for every bin read; DecCu marks each CU start
++// and records its bin delta, which the capture attaches to the CU. `bitPos` is
++// CABACReader::get_num_bits_read() (bits consumed in the slice-data substream).
++void addBins(unsigned count);
++unsigned binCount();
++void markCuStart(const ::CodingUnit* cu, unsigned bitPos);
++void recordCuBits(const ::CodingUnit* cu, unsigned bitPos);
++
++// Records the slice-data substream start bit (relative to the slice NAL RBSP)
++// for a picture. Called from DecSlice::decompressSlice; the first slice wins.
++void recordSliceDataStart(const ::Picture* pic, unsigned bitPos);
++
++// Per-substream (tiles / wavefront entry points) base bit within the slice NAL
++// RBSP. `substream` is the InputBitstream* handed to the CABAC reader.
++void recordSubstreamBase(const void* substream, unsigned base);
++// Marks the substream the CABAC reader is currently using (CABACReader::initBitstream).
++void setActiveSubstream(const void* substream);
++
++}  // namespace vide_vvc
+diff -ruN --strip-trailing-cr '--exclude=.git' '--exclude=bin' '--exclude=lib' '--exclude=.settings' '--exclude=.cproject' '--exclude=.project' '--exclude=.gitlab-ci.yml' external/VTM/source/Lib/Utilities/program_options_lite.h external/VTM/source/Lib/Utilities/program_options_lite.h
+--- external/VTM/source/Lib/Utilities/program_options_lite.h	2026-10-15 19:21:54.471325500 +0800
++++ external/VTM/source/Lib/Utilities/program_options_lite.h	2026-09-23 07:01:59.583495800 +0800
+@@ -33,6 +33,7 @@
+ #include <iostream>
+ #include <sstream>
+ #include <string>
++#include <cstdint>
+ #include <list>
+ #include <map>
+ 

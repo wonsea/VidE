@@ -38,6 +38,7 @@
 #include "DecSlice.h"
 #include "CommonLib/UnitTools.h"
 #include "CommonLib/dtrace_next.h"
+#include "VideCapture.h"  // VidE: slice-data-start bit capture
 
 #include <vector>
 
@@ -77,6 +78,7 @@ void DecSlice::decompressSlice( Slice* slice, InputBitstream* bitstream, int deb
 
   const SPS*     sps          = slice->getSPS();
   Picture*       pic          = slice->getPic();
+  vide_vvc::recordSliceDataStart( pic, bitstream->getNumBitsRead() );  // VidE: slice-data start bit
   CABACReader   &cabacReader  = *m_CABACDecoder->getCABACReader(BpmType::STD);
 
   // setup coding structure
@@ -106,9 +108,13 @@ void DecSlice::decompressSlice( Slice* slice, InputBitstream* bitstream, int deb
   // init each couple {EntropyDecoder, Substream}
   // Table of extracted substreams.
   std::vector<InputBitstream*> ppcSubstreams( numSubstreams );
+  unsigned substreamBase = bitstream->getNumBitsRead();  // VidE: cumulative base in NAL RBSP
   for( unsigned idx = 0; idx < numSubstreams; idx++ )
   {
-    ppcSubstreams[idx] = bitstream->extractSubstream( idx+1 < numSubstreams ? ( slice->getSubstreamSize(idx) << 3 ) : bitstream->getNumBitsLeft() );
+    const unsigned substreamBits = idx+1 < numSubstreams ? ( slice->getSubstreamSize(idx) << 3 ) : bitstream->getNumBitsLeft();
+    ppcSubstreams[idx] = bitstream->extractSubstream( substreamBits );
+    vide_vvc::recordSubstreamBase( ppcSubstreams[idx], substreamBase );  // VidE
+    substreamBase += substreamBits;
   }
 
   const unsigned  widthInCtus             = cs.pcv->widthInCtus;

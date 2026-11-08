@@ -178,9 +178,7 @@ public:
   {
     CHECK(m_fifoIdx >= m_fifo.size(), "FIFO exceeded");
     ruiBits = m_fifo[m_fifoIdx++];
-#if ENABLE_TRACING
-    m_numBitsRead += 8;
-#endif
+    m_numBitsRead += 8;  // VidE: always track consumed bits (bit-range capture)
   }
 
   void        peekPreviousByte( uint32_t &byte )

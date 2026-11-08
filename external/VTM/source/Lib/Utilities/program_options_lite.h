@@ -33,6 +33,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <cstdint>
 #include <list>
 #include <map>
 

@@ -50,6 +50,12 @@ static void ClearPostFilterHints       (SEIParameters *p_SEI);
 static void ClosePostFilterHints       (SEIParameters *p_SEI);
 static void InitFramePackingArrangement(VideoParameters *p_Vid);
 static void CloseFramePackingArrangement(SEIParameters *p_SEI);
+#if JVET_AK0107_MODALITY_INFORMATION
+static void InitModalityInfo(SEIParameters *p_SEI);
+static void ClearModalityInfo(SEIParameters *p_SEI);
+static void CloseModalityInfo(SEIParameters *p_SEI);
+static void FinalizeModalityInfo(SEIParameters *p_SEI);
+#endif
 
 void init_sei(SEIParameters *p_SEI)
 {
@@ -77,6 +83,9 @@ void init_sei(SEIParameters *p_SEI)
   p_SEI->seiHasSubseqInfo = FALSE;
   p_SEI->seiHasSubseqLayerInfo = FALSE;
   p_SEI->seiHasPanScanRectInfo = FALSE;
+#if JVET_AK0107_MODALITY_INFORMATION
+  p_SEI->seiHasModalityInfo = FALSE;
+#endif
 }
 
 /*
@@ -127,6 +136,10 @@ void InitSEIMessages(VideoParameters *p_Vid, InputParameters *p_Inp)
   InitDRPMRepetition(p_SEI);
   // init Frame Packing Arrangement
   InitFramePackingArrangement(p_Vid);
+#if JVET_AK0107_MODALITY_INFORMATION
+  // init Modality Information
+  InitModalityInfo(p_SEI);
+#endif
 }
 
 void CloseSEIMessages(VideoParameters *p_Vid, InputParameters *p_Inp)
@@ -150,6 +163,9 @@ void CloseSEIMessages(VideoParameters *p_Vid, InputParameters *p_Inp)
   ClosePicTiming(p_SEI);
   CloseDRPMRepetition(p_SEI);
   CloseFramePackingArrangement(p_SEI);
+#if JVET_AK0107_MODALITY_INFORMATION
+  CloseModalityInfo(p_SEI);
+#endif
 
   for (i=0; i<MAX_LAYER_NUMBER; i++)
   {
@@ -190,6 +206,10 @@ Boolean HaveAggregationSEI(VideoParameters *p_Vid)
     return TRUE;
   if (p_SEI->seiHasDRPMRepetition_info)
     return TRUE;
+#if JVET_AK0107_MODALITY_INFORMATION
+  if (p_SEI->seiHasModalityInfo)
+    return TRUE;
+#endif
 
   return FALSE;
 //  return p_Inp->SparePictureOption && ( seiHasSpare_picture || seiHasSubseq_information ||
@@ -2879,6 +2899,103 @@ static void FinalizeDRPMRepetition(VideoParameters *p_Vid)
   p_SEI->seiDRPMRepetition.payloadSize = bitstream->byte_pos;
 }
 
+#if JVET_AK0107_MODALITY_INFORMATION
+/*
+************************************************************************
+*  \functions on modality information SEI message
+*  \brief
+*      Based on JVET-AK0107
+*  \author
+*      Jingying Gao <jingying.gao@sg.panasonic.com>
+************************************************************************
+*/
+static void InitModalityInfo(SEIParameters *p_SEI)
+{
+  p_SEI->seiModalityInfo.data = malloc( sizeof(Bitstream) );
+  if( p_SEI->seiModalityInfo.data == NULL ) no_mem_exit("InitModalityInfo: p_SEI->seiModalityInfo.data");
+  p_SEI->seiModalityInfo.data->streamBuffer = malloc(MAXRTPPAYLOADLEN);
+  if( p_SEI->seiModalityInfo.data->streamBuffer == NULL ) no_mem_exit("InitModalityInfo: p_SEI->seiModalityInfo.data->streamBuffer");
+  ClearModalityInfo(p_SEI);
+}
+
+static void ClearModalityInfo(SEIParameters *p_SEI)
+{
+  memset( p_SEI->seiModalityInfo.data->streamBuffer, 0, MAXRTPPAYLOADLEN);
+  p_SEI->seiModalityInfo.data->bits_to_go  = 8;
+  p_SEI->seiModalityInfo.data->byte_pos    = 0;
+  p_SEI->seiModalityInfo.data->byte_buf    = 0;
+  p_SEI->seiModalityInfo.payloadSize       = 0;
+
+  p_SEI->seiModalityInfo.modality_info_cancel_flag = 0;
+  p_SEI->seiModalityInfo.modality_info_persistence_flag = 0;
+  p_SEI->seiModalityInfo.modality_type = 0;
+  p_SEI->seiModalityInfo.spectrum_range_present_flag = 0;
+  p_SEI->seiModalityInfo.min_wavelength_mantissa = 0;
+  p_SEI->seiModalityInfo.min_wavelength_exponent_plus15 = 0;
+  p_SEI->seiModalityInfo.max_wavelength_mantissa = 0;
+  p_SEI->seiModalityInfo.max_wavelength_exponent_plus15 = 0;
+
+  p_SEI->seiHasModalityInfo = FALSE;
+}
+
+void UpdateModalityInfo(SEIParameters *p_SEI)
+{
+  p_SEI->seiModalityInfo.modality_info_cancel_flag = 0;
+  p_SEI->seiModalityInfo.modality_info_persistence_flag = 0;
+  p_SEI->seiModalityInfo.modality_type = 1;
+  p_SEI->seiModalityInfo.spectrum_range_present_flag = 1;
+  p_SEI->seiModalityInfo.min_wavelength_mantissa = 2;
+  p_SEI->seiModalityInfo.min_wavelength_exponent_plus15 = 0;
+  p_SEI->seiModalityInfo.max_wavelength_mantissa = 0;
+  p_SEI->seiModalityInfo.max_wavelength_exponent_plus15 = 0;
+
+  p_SEI->seiHasModalityInfo  = TRUE;
+}
+
+static void FinalizeModalityInfo(SEIParameters *p_SEI)
+{
+  Bitstream *bitstream = p_SEI->seiModalityInfo.data;
+  write_u_1( "SEI: modality_info_cancel_flag", p_SEI->seiModalityInfo.modality_info_cancel_flag, bitstream );
+  if ( !p_SEI->seiModalityInfo.modality_info_cancel_flag )
+  {
+    write_u_1("SEI: modality_info_persistence_flag", p_SEI->seiModalityInfo.modality_info_persistence_flag, bitstream);
+    write_u_v(5, "SEI: modality_type", p_SEI->seiModalityInfo.modality_type, bitstream);
+    write_u_1("SEI: spectrum_range_present_flag", p_SEI->seiModalityInfo.spectrum_range_present_flag, bitstream );
+    if ( p_SEI->seiModalityInfo.spectrum_range_present_flag )
+    {
+      write_u_v(11, "SEI: min_wavelength_mantissa", p_SEI->seiModalityInfo.min_wavelength_mantissa, bitstream);
+      write_u_v(5, "SEI: min_wavelength_exponent_plus15", p_SEI->seiModalityInfo.min_wavelength_exponent_plus15, bitstream);
+      write_u_v(11, "SEI: max_wavelength_mantissa", p_SEI->seiModalityInfo.max_wavelength_mantissa, bitstream);
+      write_u_v(5, "SEI: max_wavelength_exponent_plus15", p_SEI->seiModalityInfo.max_wavelength_exponent_plus15, bitstream);
+    }
+    write_ue_v( "SEI: modality_type_extension_bits", 0,  bitstream ); // modality_type_extension_bits shall be equal to 0 in the current edition 
+  }
+  // make sure the payload is byte aligned, stuff bits are 10..0
+  if ( bitstream->bits_to_go != 8 )
+  {
+    (bitstream->byte_buf) <<= 1;
+    bitstream->byte_buf |= 1;
+    bitstream->bits_to_go--;
+    if ( bitstream->bits_to_go != 0 ) 
+      (bitstream->byte_buf) <<= (bitstream->bits_to_go);
+    bitstream->bits_to_go = 8;
+    bitstream->streamBuffer[bitstream->byte_pos++]=bitstream->byte_buf;
+    bitstream->byte_buf = 0;
+  }
+  p_SEI->seiModalityInfo.payloadSize = bitstream->byte_pos;
+}
+
+static void CloseModalityInfo(SEIParameters *p_SEI)
+{
+  if (p_SEI->seiModalityInfo.data)
+  {
+    free(p_SEI->seiModalityInfo.data->streamBuffer);
+    free(p_SEI->seiModalityInfo.data);
+  }
+  p_SEI->seiModalityInfo.data = NULL;
+}
+#endif
+
 /*
  ************************************************************************
  * \brief
@@ -3036,6 +3153,15 @@ void PrepareAggregationSEIMessage(VideoParameters *p_Vid)
     write_sei_message(p_SEI, AGGREGATION_SEI, p_SEI->seiFramePackingArrangement.data->streamBuffer, p_SEI->seiFramePackingArrangement.payloadSize, SEI_FRAME_PACKING_ARRANGEMENT);
     has_aggregation_sei_message = TRUE;
   }
+
+#if JVET_AK0107_MODALITY_INFORMATION
+  if (p_SEI->seiHasModalityInfo)
+  {
+    FinalizeModalityInfo(p_SEI);
+    write_sei_message(p_SEI, AGGREGATION_SEI, p_SEI->seiModalityInfo.data->streamBuffer, p_SEI->seiModalityInfo.payloadSize, SEI_MODALITY_INFO);
+    has_aggregation_sei_message = TRUE;
+  }
+#endif
 
   // after all the sei payload is written
   if (has_aggregation_sei_message)

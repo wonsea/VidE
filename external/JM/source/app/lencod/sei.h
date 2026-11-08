@@ -32,6 +32,7 @@
 
 #define NORMAL_SEI 0
 #define AGGREGATION_SEI 1
+#define JVET_AK0107_MODALITY_INFORMATION 1
 
 
 //! definition of SEI payload type
@@ -82,6 +83,9 @@ typedef enum {
   SEI_OPERATION_POINTS_NOT_PRESENT,
   SEI_BASE_VIEW_TEMPORAL_HRD,
   SEI_FRAME_PACKING_ARRANGEMENT,
+#if JVET_AK0107_MODALITY_INFORMATION
+  SEI_MODALITY_INFO = 218,
+#endif
 
   SEI_MAX_ELEMENTS  //!< number of maximum syntax elements
 } SEI_type;
@@ -319,6 +323,24 @@ typedef struct
   int payloadSize;
 } ToneMappingSEI;
 
+ 
+#if JVET_AK0107_MODALITY_INFORMATION
+//! Modality Infomation
+typedef struct
+{
+  Boolean modality_info_cancel_flag;
+  Boolean modality_info_persistence_flag;
+  int modality_type;
+  Boolean spectrum_range_present_flag;
+  int min_wavelength_mantissa; 
+  int min_wavelength_exponent_plus15; 
+  int max_wavelength_mantissa;
+  int max_wavelength_exponent_plus15; 
+  Bitstream *data;
+  int payloadSize;
+} modality_information_struct;
+#endif
+
 // Globals
 struct sei_params {
   Boolean seiHasDRPMRepetition_info;
@@ -357,6 +379,10 @@ struct sei_params {
   ToneMappingSEI seiToneMapping;
   Boolean seiHasPostFilterHints_info;
   post_filter_information_struct seiPostFilterHints;
+#if JVET_AK0107_MODALITY_INFORMATION
+  Boolean seiHasModalityInfo; 
+  modality_information_struct seiModalityInfo;
+#endif
 
   Boolean seiHasTemporal_reference;
   Boolean seiHasClock_timestamp;
@@ -427,6 +453,11 @@ extern void ComposeSparePictureMessage (SEIParameters *p_SEI, int delta_spare_fr
 
 extern void ClearFramePackingArrangement(SEIParameters *p_SEI);
 extern void UpdateFramePackingArrangement(VideoParameters *p_Vid, InputParameters *p_Inp);
+
+#if JVET_AK0107_MODALITY_INFORMATION 
+extern void UpdateModalityInfo(SEIParameters *p_SEI);
+#endif
+
 
 // end of temp additions
 

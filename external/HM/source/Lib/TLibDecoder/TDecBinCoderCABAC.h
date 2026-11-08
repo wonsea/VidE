@@ -78,6 +78,9 @@ public:
   TDecBinCABAC* getTDecBinCABAC()             { return this; }
   const TDecBinCABAC* getTDecBinCABAC() const { return this; }
 
+  // VidE: bits consumed so far in the CABAC substream (for per-CU bit ranges).
+  Int   getNumBitsRead    () const;
+
 private:
   TComInputBitstream* m_pcTComBitstream;
   UInt                m_uiRange;

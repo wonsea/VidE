@@ -43,6 +43,7 @@
 #include "CommonLib/ContextModelling.h"
 #include "CommonLib/MotionInfo.h"
 #include "CommonLib/UnitPartitioner.h"
+#include "VideCapture.h"  // VidE: active-substream tracking
 
 
 class CABACReader
@@ -56,6 +57,7 @@ public:
   void        initBitstream(InputBitstream *bitstream)
   {
     m_bitstream = bitstream;
+    vide_vvc::setActiveSubstream( bitstream );  // VidE: track substream base
     m_binDecoder.init(m_bitstream);
   }
   const Ctx &getCtx() const { return m_binDecoder.getCtx(); }

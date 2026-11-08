@@ -38,6 +38,7 @@
 #include "TDecCu.h"
 #include "TLibCommon/TComTU.h"
 #include "TLibCommon/TComPrediction.h"
+#include "TLibDecoder/VideCapture.h"  // VidE: prediction/residual capture hook
 
 //! \ingroup TLibDecoder
 //! \{
@@ -188,6 +189,7 @@ Bool TDecCu::xDecodeSliceEnd( TComDataCU* pcCU, UInt uiAbsPartIdx )
 //! decode CU block recursively
 Void TDecCu::xDecodeCU( TComDataCU*const pcCU, const UInt uiAbsPartIdx, const UInt uiDepth, Bool &isLastCtuOfSliceSegment)
 {
+  vide_hm::markCuStart( pcCU, uiAbsPartIdx, m_pcEntropyDecoder->getNumBitsRead() );  // VidE: CABAC bit accounting
   TComPic* pcPic        = pcCU->getPic();
   const TComSPS &sps    = pcPic->getPicSym()->getSPS();
   const TComPPS &pps    = pcPic->getPicSym()->getPPS();
@@ -343,6 +345,9 @@ Void TDecCu::xDecodeCU( TComDataCU*const pcCU, const UInt uiAbsPartIdx, const UI
 
 Void TDecCu::xFinishDecodeCU( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth, Bool &isLastCtuOfSliceSegment)
 {
+  vide_hm::recordCuBits( pcCU, uiAbsPartIdx, m_pcEntropyDecoder->getNumBitsRead() );  // VidE: record this CU's bit count
+  // VidE: record whether this CU coded an explicit cu_qp_delta (coded vs inherited QP).
+  vide_hm::recordCuQpCoded( pcCU, uiAbsPartIdx, getdQPFlag() );
   if(  pcCU->getSlice()->getPPS()->getUseDQP())
   {
     pcCU->setQPSubParts( getdQPFlag()?pcCU->getRefQP(uiAbsPartIdx):pcCU->getCodedQP(), uiAbsPartIdx, uiDepth ); // set QP
@@ -459,6 +464,11 @@ Void TDecCu::xReconInter( TComDataCU* pcCU, UInt uiDepth )
     printBlockToStream(std::cout, "###inter-resi: ", *(m_ppcYuvResi[uiDepth]));
   }
 #endif
+
+  // VidE: capture prediction (before residual is folded in) and residual.
+  vide_hm::captureInter( pcCU->getPic(), m_ppcYuvReco[uiDepth], m_ppcYuvResi[uiDepth],
+                         Int(pcCU->getCUPelX()), Int(pcCU->getCUPelY()),
+                         Int(pcCU->getWidth(0)), Int(pcCU->getHeight(0)) );
 
   // clip for only non-zero cbp case
   if  ( pcCU->getQtRootCbf( 0) )
@@ -594,6 +604,18 @@ TDecCu::xIntraRecBlk(       TComYuv*    pcRecoYuv,
         Pel* pReco      = pcRecoYuv->getAddr( compID, uiAbsPartIdx );
         Pel* pRecIPred  = pcCU->getPic()->getPicYuvRec()->getAddr( compID, pcCU->getCtuRsAddr(), pcCU->getZorderIdxInCtu() + uiAbsPartIdx );
 
+  // VidE: capture prediction / residual for this intra transform block.
+  {
+    const TComPicYuv* videRecoYuv = pcCU->getPic()->getPicYuvRec();
+    const Pel* videBase  = videRecoYuv->getAddr( compID );
+    const Int  videStride = videRecoYuv->getStride( compID );
+    const Int  videOff    = Int( pRecIPred - videBase );
+    const Int  videPicX   = videStride > 0 ? ( videOff % videStride ) : 0;
+    const Int  videPicY   = videStride > 0 ? ( videOff / videStride ) : 0;
+    vide_hm::captureIntraBlock( pcCU->getPic(), compID, videPicX, videPicY,
+                                Int(uiWidth), Int(uiHeight), piPred, Int(uiStride),
+                                piResi, Int(uiStride) );
+  }
 
 #if DEBUG_STRING
   const Bool bDebugPred=((DebugOptionList::DebugString_Pred.getInt()&debugPredModeMask) && DEBUG_STRING_CHANNEL_CONDITION(compID));

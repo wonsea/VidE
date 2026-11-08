@@ -21,6 +21,7 @@
 #include "global.h"
 #include "memalloc.h"
 #include "biaridecod.h"
+#include "VideCapture.h"
 
 
 #define B_BITS    10      // Number of bits to represent the whole coding interval
@@ -161,6 +162,7 @@ int arideco_bits_read(DecodingEnvironmentPtr dep)
 */
 unsigned int biari_decode_symbol(DecodingEnvironment *dep, BiContextType *bi_ct )
 {  
+  ++vide_jm_bins;  // VidE: per-MB bin accounting
   unsigned int bit    = bi_ct->MPS;
   unsigned int *value = &dep->Dvalue;
   unsigned int *range = &dep->Drange;  
@@ -224,6 +226,7 @@ unsigned int biari_decode_symbol(DecodingEnvironment *dep, BiContextType *bi_ct 
  */
 unsigned int biari_decode_symbol_eq_prob(DecodingEnvironmentPtr dep)
 {
+   ++vide_jm_bins;  // VidE: per-MB bin accounting
    int tmp_value;
    unsigned int *value = &dep->Dvalue;
    int *DbitsLeft = &dep->DbitsLeft;
@@ -257,6 +260,7 @@ unsigned int biari_decode_symbol_eq_prob(DecodingEnvironmentPtr dep)
  */
 unsigned int biari_decode_final(DecodingEnvironmentPtr dep)
 {
+  ++vide_jm_bins;  // VidE: per-MB bin accounting
   unsigned int range  = dep->Drange - 2;
   int value  = dep->Dvalue;
   value -= (range << dep->DbitsLeft);

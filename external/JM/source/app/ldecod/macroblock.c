@@ -7,7 +7,7 @@
  *
  * \author
  *    Main contributors (see contributors.h for copyright, address and affiliation details)
- *    - Inge Lille-Langøy               <inge.lille-langoy@telenor.com>
+ *    - Inge Lille-Langï¿½y               <inge.lille-langoy@telenor.com>
  *    - Rickard Sjoberg                 <rickard.sjoberg@era.ericsson.se>
  *    - Jani Lainema                    <jani.lainema@nokia.com>
  *    - Sebastian Purreiter             <sebastian.purreiter@mch.siemens.de>
@@ -37,6 +37,7 @@
 #include "image.h"
 #include "mb_access.h"
 #include "biaridecod.h"
+#include "VideCapture.h"  // VidE: per-MB QP-delta presence hook
 #include "transform.h"
 #include "mc_prediction.h"
 #include "quant.h"
@@ -228,6 +229,7 @@ void read_delta_quant(SyntaxElement *currSE, DataPartition *dP, Macroblock *curr
 
   currSlice->qp = ((currSlice->qp + currMB->delta_quant + 52 + 2*p_Vid->bitdepth_luma_qp_scale)%(52+p_Vid->bitdepth_luma_qp_scale)) - p_Vid->bitdepth_luma_qp_scale;
   update_qp(currMB, currSlice->qp);
+  vide_jm_capture_mb_qp_coded(currMB->mbAddrX, 1);  // VidE: MB coded mb_qp_delta
 }
 
 /*!

@@ -33,6 +33,7 @@
 
 #include "global.h"
 #include "image.h"
+#include "VideCapture.h"  // VidE: picture capture hook
 #include "fmo.h"
 #include "annexb.h"
 #include "nalu.h"
@@ -1551,6 +1552,7 @@ process_nalu:
           ++ByteStartPosition;
         }
         arideco_start_decoding (&currSlice->partArr[0].de_cabac, currStream->streamBuffer, ByteStartPosition, &currStream->read_len);
+        vide_jm_set_cabac_base(ByteStartPosition);  // VidE: per-MB bit range base
       }
       // printf ("read_new_slice: returning %s\n", current_header == SOP?"SOP":"SOS");
       //FreeNALU(nalu);
@@ -1892,6 +1894,8 @@ void exit_picture(VideoParameters *p_Vid, StorablePicture **dec_picture)
   {
     return;
   }
+
+  vide_jm_capture_picture(p_Vid, *dec_picture);  // VidE: snapshot the frame
 
 #if (DISABLE_ERC == 0)
   recfr.p_Vid = p_Vid;
@@ -2523,10 +2527,26 @@ void decode_one_slice(Slice *currSlice)
 #endif
 
     // Initializes the current macroblock
+    vide_jm_capture_slice_info(currSlice);  // VidE: first-slice header of this picture
     start_macroblock(currSlice, &currMB);
     // Get the syntax elements from the NAL
-    currSlice->read_one_macroblock(currMB);
+    {
+      const unsigned int vide_bins0 = vide_jm_bins;  // VidE: per-MB bin accounting
+      const int vide_cabac = p_Vid->active_pps->entropy_coding_mode_flag;
+      const unsigned int vide_bit0 =
+          vide_cabac ? vide_jm_cabac_base() + (unsigned int)arideco_bits_read(&currSlice->partArr[0].de_cabac)
+                     : 8u + (unsigned int)currSlice->partArr[0].bitstream->frame_bitoffset;
+      currSlice->read_one_macroblock(currMB);
+      const unsigned int vide_bit1 =
+          vide_cabac ? vide_jm_cabac_base() + (unsigned int)arideco_bits_read(&currSlice->partArr[0].de_cabac)
+                     : 8u + (unsigned int)currSlice->partArr[0].bitstream->frame_bitoffset;
+      vide_jm_capture_mb_bits(currMB->mbAddrX, vide_jm_bins - vide_bins0);
+      vide_jm_capture_mb_bit_range(currMB->mbAddrX, vide_bit0,
+                                   vide_bit1 >= vide_bit0 ? vide_bit1 - vide_bit0 : 0);
+      vide_jm_capture_mb_slice(currMB->mbAddrX, vide_jm_current_slice_index());
+    }
     decode_one_macroblock(currMB, currSlice->dec_picture);
+    vide_jm_capture_mb_pred_resi(p_Vid, currSlice, currMB);  // VidE: prediction/residual
 
     if(currSlice->mb_aff_frame_flag && currMB->mb_field)
     {

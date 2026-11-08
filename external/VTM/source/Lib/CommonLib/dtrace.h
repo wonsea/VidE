@@ -39,6 +39,7 @@
 #define _DTRACE_H_
 
 #include <stdio.h>
+#include <cstdint>
 
 #include <string>
 #include <list>

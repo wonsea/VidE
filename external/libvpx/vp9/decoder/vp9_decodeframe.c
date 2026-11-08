@@ -30,6 +30,7 @@
 
 #include "vp9/common/vp9_alloccommon.h"
 #include "vp9/common/vp9_common.h"
+#include "vp9/decoder/vp9_capture.h"  // VidE: block/frame capture hook
 #include "vp9/common/vp9_entropy.h"
 #include "vp9/common/vp9_entropymode.h"
 #include "vp9/common/vp9_idct.h"
@@ -331,8 +332,12 @@ static void predict_and_reconstruct_intra_block(TileWorkerData *twd,
     const int eob = vp9_decode_block_tokens(twd, plane, sc, col, row, tx_size,
                                             mi->segment_id);
     if (eob > 0) {
+      vide_vp9_capture_residual_begin(plane, dst, pd->dst.stride,
+                                      (1 << (tx_size + 2)), (1 << (tx_size + 2)));
       inverse_transform_block_intra(xd, plane, tx_type, tx_size, dst,
                                     pd->dst.stride, eob);
+      vide_vp9_capture_residual_end(plane, dst, pd->dst.stride,
+                                    (1 << (tx_size + 2)), (1 << (tx_size + 2)));
     }
   }
 }
@@ -381,8 +386,12 @@ static void predict_and_reconstruct_intra_block_row_mt(TileWorkerData *twd,
     const TX_TYPE tx_type =
         (plane || xd->lossless) ? DCT_DCT : intra_mode_to_tx_type_lookup[mode];
     if (*pd->eob > 0) {
+      vide_vp9_capture_residual_begin(plane, dst, pd->dst.stride,
+                                      (1 << (tx_size + 2)), (1 << (tx_size + 2)));
       inverse_transform_block_intra(xd, plane, tx_type, tx_size, dst,
                                     pd->dst.stride, *pd->eob);
+      vide_vp9_capture_residual_end(plane, dst, pd->dst.stride,
+                                    (1 << (tx_size + 2)), (1 << (tx_size + 2)));
     }
     /* Keep the alignment to 16 */
     pd->dqcoeff += (16 << (tx_size << 1));
@@ -401,7 +410,11 @@ static int reconstruct_inter_block(TileWorkerData *twd, MODE_INFO *const mi,
   uint8_t *dst = &pd->dst.buf[4 * row * pd->dst.stride + 4 * col];
 
   if (eob > 0) {
+    vide_vp9_capture_residual_begin(plane, dst, pd->dst.stride,
+                                    (1 << (tx_size + 2)), (1 << (tx_size + 2)));
     inverse_transform_block_inter(xd, plane, tx_size, dst, pd->dst.stride, eob);
+    vide_vp9_capture_residual_end(plane, dst, pd->dst.stride,
+                                  (1 << (tx_size + 2)), (1 << (tx_size + 2)));
   }
 #if CONFIG_MISMATCH_DEBUG
   {
@@ -445,9 +458,12 @@ static int reconstruct_inter_block_row_mt(TileWorkerData *twd,
 
   (void)mi;
   if (eob > 0) {
-    inverse_transform_block_inter(
-        xd, plane, tx_size, &pd->dst.buf[4 * row * pd->dst.stride + 4 * col],
-        pd->dst.stride, eob);
+    uint8_t *dst = &pd->dst.buf[4 * row * pd->dst.stride + 4 * col];
+    vide_vp9_capture_residual_begin(plane, dst, pd->dst.stride,
+                                    (1 << (tx_size + 2)), (1 << (tx_size + 2)));
+    inverse_transform_block_inter(xd, plane, tx_size, dst, pd->dst.stride, eob);
+    vide_vp9_capture_residual_end(plane, dst, pd->dst.stride,
+                                  (1 << (tx_size + 2)), (1 << (tx_size + 2)));
   }
   pd->dqcoeff += (16 << (tx_size << 1));
   pd->eob++;
@@ -932,7 +948,10 @@ static void decode_block(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
                          "Invalid block size.");
   }
 
+  vide_vp9_capture_block_begin(r);  // VidE: per-block bit accounting
   vp9_read_mode_info(twd, pbi, mi_row, mi_col, x_mis, y_mis);
+
+  vide_vp9_capture_block(cm, mi, mi_row, mi_col, bsize);  // VidE: record block
 
   if (mi->skip) {
     dec_reset_skip_context(xd);
@@ -1026,6 +1045,8 @@ static void decode_block(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
   if (cm->lf.filter_level) {
     vp9_build_mask(cm, mi, mi_row, mi_col, bw, bh);
   }
+
+  vide_vp9_capture_block_end(r);  // VidE: attach this block's bin count
 }
 
 static void recon_block(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
@@ -1082,7 +1103,10 @@ static void parse_block(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
                          "Invalid block size.");
   }
 
+  vide_vp9_capture_block_begin(r);  // VidE: per-block bit accounting
   vp9_read_mode_info(twd, pbi, mi_row, mi_col, x_mis, y_mis);
+
+  vide_vp9_capture_block(cm, mi, mi_row, mi_col, bsize);  // VidE: record block
 
   if (mi->skip) {
     dec_reset_skip_context(xd);
@@ -1118,6 +1142,7 @@ static void parse_block(TileWorkerData *twd, VP9Decoder *const pbi, int mi_row,
   }
 
   xd->corrupted |= vpx_reader_has_error(r);
+  vide_vp9_capture_block_end(r);  // VidE: attach this block's bin count
 }
 
 static INLINE int dec_partition_plane_context(TileWorkerData *twd, int mi_row,
@@ -1185,6 +1210,7 @@ static void decode_partition(TileWorkerData *twd, VP9Decoder *const pbi,
 
   if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols) return;
 
+  vide_vp9_capture_partition_begin(mi_row, mi_col, 4 << n4x4_l2);  // VidE: partition node
   partition = read_partition(twd, mi_row, mi_col, has_rows, has_cols, n8x8_l2);
   subsize = subsize_lookup[partition][bsize];  // get_subsize(bsize, partition);
   if (!hbs) {
@@ -1224,6 +1250,8 @@ static void decode_partition(TileWorkerData *twd, VP9Decoder *const pbi,
   if (bsize >= BLOCK_8X8 &&
       (bsize == BLOCK_8X8 || partition != PARTITION_SPLIT))
     dec_update_partition_context(twd, mi_row, mi_col, subsize, num_8x8_wh);
+
+  vide_vp9_capture_partition_end();  // VidE
 }
 
 static void process_partition(TileWorkerData *twd, VP9Decoder *const pbi,
@@ -1243,6 +1271,7 @@ static void process_partition(TileWorkerData *twd, VP9Decoder *const pbi,
   if (mi_row >= cm->mi_rows || mi_col >= cm->mi_cols) return;
 
   if (parse_recon_flag & PARSE) {
+    vide_vp9_capture_partition_begin(mi_row, mi_col, 4 << n4x4_l2);  // VidE
     *xd->partition =
         read_partition(twd, mi_row, mi_col, has_rows, has_cols, n8x8_l2);
   }
@@ -1292,6 +1321,7 @@ static void process_partition(TileWorkerData *twd, VP9Decoder *const pbi,
     if ((bsize == BLOCK_8X8 || partition != PARTITION_SPLIT) &&
         bsize >= BLOCK_8X8)
       dec_update_partition_context(twd, mi_row, mi_col, subsize, num_8x8_wh);
+    vide_vp9_capture_partition_end();  // VidE
   }
 }
 
@@ -2131,6 +2161,7 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi, const uint8_t *data,
         if (mi_row + MI_BLOCK_SIZE >= cm->mi_rows) continue;
 
         winterface->sync(&pbi->lf_worker);
+        vide_vp9_capture_prefilter_rows(get_frame_new_buffer(cm), lf_start, mi_row);  // VidE
         lf_data->start = lf_start;
         lf_data->stop = mi_row;
         if (pbi->max_threads > 1) {
@@ -2146,6 +2177,8 @@ static const uint8_t *decode_tiles(VP9Decoder *pbi, const uint8_t *data,
   if (cm->lf.filter_level && !cm->skip_loop_filter) {
     LFWorkerData *const lf_data = (LFWorkerData *)pbi->lf_worker.data1;
     winterface->sync(&pbi->lf_worker);
+    vide_vp9_capture_prefilter_rows(get_frame_new_buffer(cm), lf_data->start,
+                                    cm->mi_rows);  // VidE
     lf_data->start = lf_data->stop;
     lf_data->stop = cm->mi_rows;
     winterface->execute(&pbi->lf_worker);
@@ -2962,6 +2995,7 @@ void vp9_decode_frame(VP9Decoder *pbi, const uint8_t *data,
   struct vpx_read_bit_buffer rb;
   int context_updated = 0;
   uint8_t clear_data[MAX_VP9_HEADER_SIZE];
+  vide_vp9_capture_set_frame_data(data);  // VidE: frame-relative block bit ranges
   const size_t first_partition_size = read_uncompressed_header(
       pbi, init_read_bit_buffer(pbi, &rb, data, data_end, clear_data));
   const int tile_rows = 1 << cm->log2_tile_rows;
@@ -3048,6 +3082,9 @@ void vp9_decode_frame(VP9Decoder *pbi, const uint8_t *data,
   } else {
     *p_data_end = decode_tiles(pbi, data + first_partition_size, data_end);
   }
+
+  // VidE: snapshot the reconstruction + block info for this frame.
+  vide_vp9_capture_frame(cm, new_fb, cm->frame_type == KEY_FRAME);
 
   if (!xd->corrupted) {
     if (!cm->error_resilient_mode && !cm->frame_parallel_decoding_mode) {

@@ -1,0 +1,108 @@
+# =============================================================================
+# VidE .gitignore
+#
+# Layout: the unified build root is /build (see docs/03_build_guide.md); all
+# third-party build output lives under /build/deps. Vendored reference-software
+# sources live under /external and are COMMITTED (they carry VidE's hooks/patches
+# -- see external/patches/README.md); only their build artifacts are ignored.
+# =============================================================================
+
+# ---- VidE build output (unified) -------------------------------------------
+/build/
+/tmp/
+/vide_cache/
+
+# ---- Stray local scratch files (not source) --------------------------------
+/str.bin
+/tmp.txt
+
+# ---- CMake -----------------------------------------------------------------
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+*.cmake.stamp
+Testing/
+
+# ---- Compiled objects / libraries / binaries -------------------------------
+*.o
+*.obj
+*.a
+*.lib
+*.exe
+*.dll
+*.so
+*.dylib
+*.pdb
+*.ilk
+*.exp
+*.d
+*.ninja
+*.ninja_deps
+*.ninja_log
+
+# ---- ImGui runtime state ---------------------------------------------------
+vide_layout.ini
+imgui.ini
+
+# ---- Editor / OS -----------------------------------------------------------
+.vscode/
+.idea/
+.cache/
+.DS_Store
+Thumbs.db
+*~
+
+# ---- Helper debug logs / stray decoder dumps -------------------------------
+*.log
+*.yuv
+*.ppm
+*.ivf
+avc_bridge.log
+av1_capture.log
+vide_avc_tmp.*
+
+# ---- Vendored reference software: ignore in-tree build artifacts -----------
+# HM (HEVC Test Model)
+external/HM/bin/
+external/HM/lib/
+external/HM/.settings/
+external/HM/CMakeCache.txt
+external/HM/CMakeFiles/
+
+# VTM (VVC Test Model)
+external/VTM/bin/
+external/VTM/lib/
+external/VTM/CMakeCache.txt
+external/VTM/CMakeFiles/
+
+# JM (AVC reference decoder): built by the main CMake, no in-tree artifacts
+external/JM/bin/
+external/JM/lib/
+
+# libvpx: configure/build writes generated files in place; keep the sources.
+# NOTE: external/libvpx/build/make/ is upstream SOURCE -- do NOT ignore it.
+external/libvpx/Makefile
+external/libvpx/config.log
+external/libvpx/config.mk
+external/libvpx/libs-*.mk
+external/libvpx/solution.mk
+external/libvpx/vpx_config.c
+external/libvpx/vpx_config.h
+external/libvpx/vpx_version.h
+external/libvpx/.bins/
+external/libvpx/.libs/
+external/libvpx/build_debug/
+
+# libaom: built out-of-tree under build/deps/aom. NOTE: external/libaom/build/
+# is upstream SOURCE (cmake modules) -- do NOT ignore it.
+external/libaom/CMakeCache.txt
+external/libaom/CMakeFiles/
+
+# ---- Private design / architecture docs -------------------------------------
+# Kept locally, never published. (Requirements, architecture, internal tasks and
+# release notes are proprietary and intentionally excluded from the repository.)
+docs/00_requirement.md
+docs/01_design.md
+docs/02_tasks.md
+docs/04_release.md

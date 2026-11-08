@@ -37,6 +37,7 @@
 
 #include "CABACReader.h"
 
+#include "DecoderLib/VideCapture.h"  // VidE: per-CU CABAC bit accounting
 #include "CommonLib/CodingStructure.h"
 #include "CommonLib/TrQuant.h"
 #include "CommonLib/UnitTools.h"
@@ -509,6 +510,13 @@ void CABACReader::coding_tree( CodingStructure& cs, Partitioner& partitioner, CU
   const PPS      &pps         = *cs.pps;
   const UnitArea &currArea    = partitioner.currArea();
 
+  // VidE: record the real CU partition tree from the decoder recursion (luma
+  // tree only; chroma-tree calls push nothing).
+  vide_vvc::CodingNodeScope videNodeScope(
+      &cs, currArea.lumaPos().x, currArea.lumaPos().y,
+      static_cast<int>(currArea.lwidth()), static_cast<int>(currArea.lheight()),
+      partitioner.chType == ChannelType::LUMA);
+
   // Reset delta QP coding flag and ChromaQPAdjustemt coding flag
   //Note: do not reset qg at chroma CU
   if( pps.getUseDQP() && partitioner.currQgEnable() && !isChroma(partitioner.chType) )
@@ -698,6 +706,10 @@ void CABACReader::coding_tree( CodingStructure& cs, Partitioner& partitioner, CU
   // coding unit
 
   coding_unit( cu, partitioner, cuCtx );
+  if (cu.chType == ChannelType::LUMA)
+  {
+    vide_vvc::attachCodingNode(&cs, &cu);  // VidE: attach real CU syntax to its node
+  }
   //recover cuCtx.qp to luma qp after decoding the chroma CU
   if( pps.getUseDQP() && partitioner.isSepTree( cs ) && isChroma( cu.chType ) )
   {
@@ -873,6 +885,7 @@ PartSplit CABACReader::split_cu_mode( CodingStructure& cs, Partitioner &partitio
 
 void CABACReader::coding_unit( CodingUnit &cu, Partitioner &partitioner, CUCtx& cuCtx )
 {
+  vide_vvc::markCuStart( &cu, get_num_bits_read() );  // VidE: begin per-CU bin/bit accounting
   CodingStructure& cs = *cu.cs;
   CHECK( cu.treeType != partitioner.treeType || cu.modeType != partitioner.modeType, "treeType or modeType mismatch" );
   DTRACE( g_trace_ctx, D_SYNTAX, "coding_unit() treeType=%d modeType=%d\n", cu.treeType, cu.modeType );
@@ -891,6 +904,7 @@ void CABACReader::coding_unit( CodingUnit &cu, Partitioner &partitioner, CUCtx& 
     MergeCtx           mrgCtx;
     prediction_unit  ( pu, mrgCtx );
     end_of_ctu( cu, cuCtx );
+    vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: skip-path CU bits
     return;
   }
 
@@ -927,6 +941,7 @@ void CABACReader::coding_unit( CodingUnit &cu, Partitioner &partitioner, CUCtx& 
       }
     }
     end_of_ctu(cu, cuCtx);
+    vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: palette-path CU bits
     return;
   }
 
@@ -940,6 +955,8 @@ void CABACReader::coding_unit( CodingUnit &cu, Partitioner &partitioner, CUCtx& 
 
   // check end of cu
   end_of_ctu( cu, cuCtx );
+
+  vide_vvc::recordCuBits( &cu, get_num_bits_read() );  // VidE: record this CU's bin/bit range
 }
 
 void CABACReader::cu_skip_flag( CodingUnit& cu )
@@ -1804,6 +1821,7 @@ void CABACReader::cu_palette_info(CodingUnit& cu, ComponentID compBegin, uint32_
   {
     if (!cu.isSepTree() || isLuma(tu.chType))
     {
+      vide_vvc::recordCuQpCoded(&cu);  // VidE: this CU codes an explicit cu_qp_delta
       cu_qp_delta(cu, cuCtx.qp, cu.qp);
       cuCtx.qp = cu.qp;
       cuCtx.isDQPCoded = true;
@@ -2820,6 +2838,7 @@ void CABACReader::transform_unit( TransformUnit& tu, CUCtx& cuCtx, Partitioner& 
   {
     if( cu.cs->pps->getUseDQP() && !cuCtx.isDQPCoded )
     {
+      vide_vvc::recordCuQpCoded(&cu);  // VidE: this CU codes an explicit cu_qp_delta
       cu_qp_delta(cu, cuCtx.qp, cu.qp);
       cuCtx.qp = cu.qp;
       cuCtx.isDQPCoded = true;

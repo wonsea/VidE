@@ -31,6 +31,7 @@
 
 static INLINE int read_bool(vpx_reader *r, int prob, BD_VALUE *value,
                             int *count, unsigned int *range) {
+  ++r->bins;  // VidE: count one binary symbol (coefficient tokens)
   const unsigned int split = (*range * prob + (256 - prob)) >> CHAR_BIT;
   const BD_VALUE bigsplit = (BD_VALUE)split << (BD_VALUE_SIZE - CHAR_BIT);
 #if CONFIG_BITSTREAM_DEBUG

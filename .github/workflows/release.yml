@@ -1,0 +1,107 @@
+name: release
+
+# Builds VidE on Windows (MSYS2) and Ubuntu, and attaches the runnable packages
+# to a GitHub Release when a v* tag is pushed. FFmpeg is downloaded + SHA-256
+# verified and built as LGPL shared libraries by scripts/build-ffmpeg.* so the
+# bundled av*.dll/.so are license-safe (VidE itself is MIT).
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build-${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            name: windows-x86_64
+          - os: ubuntu-latest
+            name: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---- Windows (MSYS2) --------------------------------------------------
+      - name: Install MSYS2 toolchain
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-glfw
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-aom
+            mingw-w64-x86_64-libvpx
+            mingw-w64-x86_64-yasm
+            mingw-w64-x86_64-nasm
+            make tar xz curl git
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File scripts\build-all.ps1 -RunTests
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: Compress-Archive -Path build\dist\* -DestinationPath "VidE-${{ matrix.name }}.zip" -Force
+
+      # ---- Ubuntu -----------------------------------------------------------
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: bash scripts/bootstrap-ubuntu.sh
+
+      - name: Build (Ubuntu)
+        if: runner.os == 'Linux'
+        run: bash scripts/build-all.sh --test
+
+      - name: Package (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          bash scripts/package-linux.sh
+          ldd build/bin/vide | grep -i "avcodec\|avformat" || true
+
+      # ---- Upload -----------------------------------------------------------
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VidE-${{ matrix.name }}
+          path: VidE-${{ matrix.name }}.zip
+          if-no-files-found: error
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: VidE-${{ matrix.name }}
+          path: build/dist/VidE-linux-*.tar.gz
+          if-no-files-found: error
+
+  release:
+    name: publish release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
