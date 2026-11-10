@@ -28,7 +28,9 @@ cmake -S "$src" -B "$build" -G Ninja -DCMAKE_BUILD_TYPE=Release
 echo "Building HM static libraries ..."
 cmake --build "$build" -j 8
 
-if ! ls "$src"/lib/*/libTLib*.a >/dev/null 2>&1; then
+# HM's BBuildEnv nests the archives under lib/<generator>/<toolchain>/...,
+# so search recursively instead of assuming a single intermediate directory.
+if [ -z "$(find "$src/lib" -name 'libTLib*.a' -print -quit 2>/dev/null)" ]; then
     echo "HM static libraries were not produced" >&2
     exit 1
 fi

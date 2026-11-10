@@ -31,8 +31,10 @@ case "$(uname -s)" in
 esac
 
 cd "$vpx"
-# Invoke via sh: the vendored configure is committed without the executable bit,
-# so `./configure` fails on a fresh Linux clone. `sh ./configure` is mode-agnostic.
+# The vendored tree is committed without executable bits. configure invokes
+# several helper scripts directly (version.sh, rtcd.pl, ...), so restore the
+# bits before running it; `sh ./configure` itself stays mode-agnostic.
+chmod +x configure build/make/*.sh build/make/*.pl 2>/dev/null || true
 sh ./configure \
     --target="$vpx_target" \
     --disable-unit-tests --disable-examples --disable-tools --disable-docs \

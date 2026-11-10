@@ -20,10 +20,14 @@ if [ ! -f "$src/CMakeLists.txt" ]; then
 fi
 
 echo "Configuring libaom in $build ..."
+# Old pre-OBU libaom only enables PIC for shared builds, but modern Linux
+# toolchains default to PIE. Force PIC so the static archive (including its
+# hand-written asm) can be linked by aomdec and vide_av1_helper.
 cmake -S "$src" -B "$build" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DAOM_TARGET_CPU=x86_64 -DCONFIG_AV1_ENCODER=1 \
-    -DCONFIG_UNIT_TESTS=0 -DENABLE_TESTS=0 -DENABLE_EXAMPLES=0 -DENABLE_TOOLS=0 -DENABLE_DOCS=0
+    -DCONFIG_UNIT_TESTS=0 -DENABLE_TESTS=0 -DENABLE_EXAMPLES=0 -DENABLE_TOOLS=0 -DENABLE_DOCS=0 \
+    -DCONFIG_PIC=1 -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DAOM_AS_FLAGS=-DPIC
 
 echo "Building libaom ..."
 cmake --build "$build" --target aom aomenc aomdec -j 8

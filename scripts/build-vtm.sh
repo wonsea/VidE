@@ -33,7 +33,9 @@ cmake -S "$src" -B "$build" -G Ninja \
 echo "Building VTM static libraries ..."
 cmake --build "$build" --target DecoderLib -j 8
 
-if ! ls "$src"/lib/*/lib*.a >/dev/null 2>&1; then
+# VTM's BBuildEnv nests the archives under lib/<generator>/<toolchain>/...,
+# so search recursively instead of assuming a single intermediate directory.
+if [ -z "$(find "$src/lib" -name 'lib*.a' -print -quit 2>/dev/null)" ]; then
     echo "VTM static libraries were not produced" >&2
     exit 1
 fi

@@ -42,6 +42,20 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "missing required tool: $1" >
 need tar
 need make
 
+# FFmpeg 8.x's x86inc.asm needs NASM >= 2.16; Ubuntu 20.04 ships 2.14.02,
+# which fails on libavcodec/x86/vp8dsp.asm. Fail early with actionable advice.
+if command -v nasm >/dev/null 2>&1; then
+    nasm_version="$(nasm -v | awk '{print $3}')"
+    nasm_major="${nasm_version%%.*}"
+    nasm_rest="${nasm_version#*.}"
+    nasm_minor="${nasm_rest%%.*}"
+    if [ "$nasm_major" -lt 2 ] || { [ "$nasm_major" -eq 2 ] && [ "$nasm_minor" -lt 16 ]; }; then
+        echo "nasm $nasm_version is too old for FFmpeg $ff_version (need >= 2.16)." >&2
+        echo "Install a newer NASM (https://www.nasm.us/) and put it on PATH." >&2
+        exit 1
+    fi
+fi
+
 if command -v nproc >/dev/null 2>&1; then jobs="$(nproc)"; else jobs=8; fi
 
 # ---- fetch + verify ---------------------------------------------------------
