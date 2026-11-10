@@ -28,6 +28,13 @@ option(VIDE_BUILD_TESTS    "Build the test suite"                          ON)
 
 message(STATUS "VidE ${PROJECT_VERSION} | build type: ${CMAKE_BUILD_TYPE}")
 
+# The bundled LGPL FFmpeg libraries depend on each other (e.g. libavcodec ->
+# libswresample). A DT_RUNPATH only resolves the executable's direct
+# dependencies, so use the legacy transitive DT_RPATH on Linux.
+if(UNIX AND NOT APPLE)
+    add_link_options(-Wl,--disable-new-dtags)
+endif()
+
 add_subdirectory(external)
 add_subdirectory(src)
 

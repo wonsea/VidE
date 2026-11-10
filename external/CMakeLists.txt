@@ -28,4 +28,6 @@ target_link_libraries(imgui PUBLIC glfw)
 
 # ---- OpenGL ----------------------------------------------------------------
 find_package(OpenGL REQUIRED)
-target_link_libraries(imgui PUBLIC OpenGL::GL)
+# Some GLFW/OpenGL loader builds call dlopen(); on glibc < 2.34 that lives in
+# libdl, which is not pulled in automatically by the OpenGL target.
+target_link_libraries(imgui PUBLIC OpenGL::GL ${CMAKE_DL_LIBS})

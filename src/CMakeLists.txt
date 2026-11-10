@@ -20,6 +20,12 @@ add_library(vide_core STATIC
 target_include_directories(vide_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_compile_features(vide_core PUBLIC cxx_std_17)
 
+# vide_core uses std::thread/mutex, and the reference helpers link static
+# libaom/libvpx archives that also call pthread APIs. On glibc < 2.34 those
+# symbols live in libpthread, so propagate the threads link dependency.
+find_package(Threads REQUIRED)
+target_link_libraries(vide_core PUBLIC Threads::Threads)
+
 # All VidE scratch files live under <repo>/tmp unless $VIDE_TMP_DIR overrides it.
 target_compile_definitions(vide_core PUBLIC
     VIDE_DEFAULT_TMP_DIR="${CMAKE_SOURCE_DIR}/tmp")
